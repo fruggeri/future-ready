@@ -1,0 +1,104 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                 String   @id @default(uuid())
+  email              String   @unique
+  name               String?
+  passwordHash       String   @map("password_hash")
+  stripeCustomerId   String?  @map("stripe_customer_id")
+  plan               String   @default("BETA") // BETA, BASE, FAMILY
+  subscriptionStatus String?  @map("subscription_status")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  children           Child[]
+
+  @@map("users")
+}
+
+model Child {
+  id                    String      @id @default(uuid())
+  userId                String      @map("user_id")
+  user                  User        @relation(fields: [userId], references: [id])
+  name                  String
+  age                   Int
+  kidAccessCode         String?     @unique @map("kid_access_code")
+  interests             String?
+  currentLevelsByDomain Json        @map("current_levels_by_domain")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
+  challenges            Challenge[]
+  xpEvents              XPEvent[]
+
+  @@map("children")
+}
+
+model Challenge {
+  id          String       @id @default(uuid())
+  childId     String       @map("child_id")
+  child       Child        @relation(fields: [childId], references: [id])
+  domain      String
+  level       Int
+  prompt      String
+  createdAt   DateTime     @default(now()) @map("created_at")
+  submissions Submission[]
+
+  @@map("challenges")
+}
+
+model ChallengeTemplate {
+  id        String   @id @default(uuid())
+  ageMin    Int      @map("age_min")
+  ageMax    Int      @map("age_max")
+  domain    String
+  level     Int
+  prompt    String
+  sortOrder Int      @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([ageMin, ageMax, sortOrder])
+  @@map("challenge_templates")
+}
+
+model Submission {
+  id           String      @id @default(uuid())
+  challengeId  String      @map("challenge_id")
+  challenge    Challenge   @relation(fields: [challengeId], references: [id])
+  responseText String      @map("response_text")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  evaluation   Evaluation?
+
+  @@map("submissions")
+}
+
+model Evaluation {
+  id                 String     @id @default(uuid())
+  submissionId       String     @unique @map("submission_id")
+  submission         Submission @relation(fields: [submissionId], references: [id])
+  strengths          String
+  improvementArea    String     @map("improvement_area")
+  coachingFeedback   String     @map("coaching_feedback")
+  nextStepSuggestion String     @map("next_step_suggestion")
+  internalScore      Int        @map("internal_score")
+  xpAwarded          Int        @map("xp_awarded")
+  createdAt          DateTime   @default(now()) @map("created_at")
+
+  @@map("evaluations")
+}
+
+model XPEvent {
+  id        String   @id @default(uuid())
+  childId   String   @map("child_id")
+  child     Child    @relation(fields: [childId], references: [id])
+  xpAmount  Int      @map("xp_amount")
+  reason    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("xp_events")
+}

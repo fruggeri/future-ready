@@ -1,6 +1,36 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getAuthenticatedUserId } from "@/lib/session";
+
+type RecentActivitySubmission = Prisma.SubmissionGetPayload<{
+    include: {
+        challenge: {
+            select: {
+                id: true;
+                domain: true;
+                level: true;
+                prompt: true;
+                child: {
+                    select: {
+                        id: true;
+                        name: true;
+                    };
+                };
+            };
+        };
+        evaluation: {
+            select: {
+                strengths: true;
+                improvementArea: true;
+                coachingFeedback: true;
+                nextStepSuggestion: true;
+                xpAwarded: true;
+                internalScore: true;
+            };
+        };
+    };
+}>;
 
 export async function GET() {
     try {
@@ -9,7 +39,7 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const submissions = await prisma.submission.findMany({
+        const submissions: RecentActivitySubmission[] = await prisma.submission.findMany({
             where: {
                 challenge: {
                     child: {
@@ -47,7 +77,7 @@ export async function GET() {
             },
         });
 
-        const activity = submissions.map((submission) => ({
+        const activity = submissions.map((submission: RecentActivitySubmission) => ({
             id: submission.id,
             createdAt: submission.createdAt,
             responseText: submission.responseText,

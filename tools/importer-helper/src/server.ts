@@ -1,12 +1,13 @@
 import "dotenv/config";
 import http from "node:http";
 
-import { DEFAULT_PORT, DB_PATH, DATA_DIR } from "./config";
+import { DEFAULT_HOST, DEFAULT_PORT, DB_PATH, DATA_DIR } from "./config";
 import { ImporterDatabase } from "./database";
 import type { MeetingPayload } from "./types";
 
 const db = new ImporterDatabase();
 const port = Number(process.env.FUTUREREADY_HELPER_PORT ?? DEFAULT_PORT);
+const host = process.env.FUTUREREADY_HELPER_HOST ?? DEFAULT_HOST;
 
 function sendJson(response: http.ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
@@ -68,8 +69,8 @@ const server = http.createServer(async (request, response) => {
   sendJson(response, 404, { error: "Not found" });
 });
 
-server.listen(port, "127.0.0.1", () => {
-  console.log(`FutureReady importer helper listening on http://127.0.0.1:${port}`);
+server.listen(port, host, () => {
+  console.log(`FutureReady importer helper listening on http://${host}:${port}`);
   console.log(`Writing data to ${DATA_DIR}`);
   db.backfillOpenAIIndex().catch((error) => {
     console.error("OpenAI backfill failed:", error);

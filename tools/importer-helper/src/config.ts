@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 export const DEFAULT_PORT = 4318;
+export const DEFAULT_HOST = "127.0.0.1";
 export const DATA_DIR =
   process.env.FUTUREREADY_DATA_DIR ??
   path.join(os.homedir(), "FutureReadyData");

@@ -94,6 +94,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [activeRailPanel, setActiveRailPanel] = useState<"search" | "chat" | null>(null);
 
   useEffect(() => {
     setSelectedMeetingId(initialMeeting?.meetingId ?? meetings[0]?.meetingId ?? "");
@@ -120,6 +121,10 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
     null;
 
   const textParagraphs = selectedItem ? paragraphsFromText(selectedItem.plainText) : [];
+  const contentColumnClass =
+    activeRailPanel === null
+      ? "2xl:grid-cols-[290px_330px_minmax(0,1fr)_360px] xl:grid-cols-[280px_320px_minmax(0,1fr)_340px]"
+      : "2xl:grid-cols-[280px_320px_minmax(0,0.82fr)_minmax(420px,1.18fr)] xl:grid-cols-[270px_300px_minmax(0,0.8fr)_minmax(380px,1.2fr)]";
 
   function selectMeeting(meetingId: string) {
     setSelectedMeetingId(meetingId);
@@ -248,7 +253,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
           </div>
         </section>
 
-        <section className="grid gap-6 2xl:grid-cols-[290px_330px_minmax(0,1fr)_360px] xl:grid-cols-[280px_320px_minmax(0,1fr)]">
+        <section className={`grid gap-6 ${contentColumnClass}`}>
           <aside className="rounded-[28px] border border-slate-200/70 bg-white/92 p-4 shadow-[0_18px_50px_rgba(28,48,89,0.08)]">
             <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700">
               <Database className="h-4 w-4 text-sky-600" />
@@ -340,7 +345,10 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
             </div>
           </aside>
 
-          <section className="rounded-[30px] border border-slate-200/80 bg-white/96 p-5 shadow-[0_22px_60px_rgba(28,48,89,0.1)]">
+          <section
+            className="rounded-[30px] border border-slate-200/80 bg-white/96 p-5 shadow-[0_22px_60px_rgba(28,48,89,0.1)]"
+            onMouseDown={() => setActiveRailPanel(null)}
+          >
             {!meeting || !selectedItem ? (
               <div className="flex min-h-[500px] items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-slate-50 text-center">
                 <div>
@@ -441,8 +449,16 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
             )}
           </section>
 
-          <aside className="grid gap-4 xl:col-span-3 2xl:col-span-1">
-            <section className="rounded-[28px] border border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_50px_rgba(28,48,89,0.08)]">
+          <aside className="grid gap-4 xl:col-span-1">
+            <section
+              className={`rounded-[28px] border bg-white/95 p-5 shadow-[0_18px_50px_rgba(28,48,89,0.08)] transition-all ${
+                activeRailPanel === "search"
+                  ? "border-sky-300 shadow-[0_24px_60px_rgba(14,116,144,0.14)]"
+                  : "border-slate-200/80"
+              }`}
+              onMouseDown={() => setActiveRailPanel("search")}
+              onFocusCapture={() => setActiveRailPanel("search")}
+            >
               <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <FileSearch className="h-4 w-4 text-sky-600" />
                 Search Archive
@@ -483,7 +499,15 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
               </div>
             </section>
 
-            <section className="rounded-[28px] border border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_50px_rgba(28,48,89,0.08)]">
+            <section
+              className={`rounded-[28px] border bg-white/95 p-5 shadow-[0_18px_50px_rgba(28,48,89,0.08)] transition-all ${
+                activeRailPanel === "chat"
+                  ? "border-emerald-300 shadow-[0_24px_60px_rgba(5,150,105,0.14)]"
+                  : "border-slate-200/80"
+              }`}
+              onMouseDown={() => setActiveRailPanel("chat")}
+              onFocusCapture={() => setActiveRailPanel("chat")}
+            >
               <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <MessageSquareText className="h-4 w-4 text-emerald-600" />
                 Ask The Archive

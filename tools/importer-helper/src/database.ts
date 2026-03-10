@@ -477,6 +477,40 @@ export class ImporterDatabase {
     }
   }
 
+  private syncAttachmentsToOpenAIInBackground(
+    artifacts: Array<{
+      attachmentKey: string;
+      attachmentId: string;
+      itemId: string;
+      meetingId: string;
+      fileName: string;
+      localPath: string;
+      sha256: string;
+    }>,
+  ) {
+    if (artifacts.length === 0) {
+      return;
+    }
+
+    setImmediate(() => {
+      Promise.allSettled(
+        artifacts.map((artifact) =>
+          this.syncAttachmentToOpenAI({
+            attachmentKey: artifact.attachmentKey,
+            attachmentId: artifact.attachmentId,
+            itemId: artifact.itemId,
+            meetingId: artifact.meetingId,
+            fileName: artifact.fileName,
+            localPath: artifact.localPath,
+            sha256: artifact.sha256,
+          }),
+        ),
+      ).catch((error) => {
+        console.error("Background OpenAI attachment sync failed:", error);
+      });
+    });
+  }
+
   async saveMeeting(payload: MeetingPayload) {
     const timestamp = new Date().toISOString();
     const meetingFolder = path.join(ATTACHMENTS_DIR, safeSegment(payload.meetingId));
@@ -526,18 +560,6 @@ export class ImporterDatabase {
           extractedAt: timestamp,
         });
       }
-    }
-
-    for (const artifact of attachmentArtifacts) {
-      await this.syncAttachmentToOpenAI({
-        attachmentKey: artifact.attachmentKey,
-        attachmentId: artifact.attachmentId,
-        itemId: artifact.itemId,
-        meetingId: artifact.meetingId,
-        fileName: artifact.fileName,
-        localPath: artifact.localPath,
-        sha256: artifact.sha256,
-      });
     }
 
     const transaction = this.db.transaction(() => {
@@ -661,6 +683,18 @@ export class ImporterDatabase {
       };
     });
 
-    return transaction();
+    const result = transaction();
+    this.syncAttachmentsToOpenAIInBackground(
+      attachmentArtifacts.map((artifact) => ({
+        attachmentKey: artifact.attachmentKey,
+        attachmentId: artifact.attachmentId,
+        itemId: artifact.itemId,
+        meetingId: artifact.meetingId,
+        fileName: artifact.fileName,
+        localPath: artifact.localPath,
+        sha256: artifact.sha256,
+      })),
+    );
+    return result;
   }
 }

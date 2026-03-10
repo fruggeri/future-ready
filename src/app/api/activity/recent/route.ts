@@ -47,7 +47,7 @@ export async function GET() {
             },
         });
 
-        const activity = submissions.map((submission) => ({
+        const activity = submissions.map((submission: (typeof submissions)[number]) => ({
             id: submission.id,
             createdAt: submission.createdAt,
             responseText: submission.responseText,

@@ -37,8 +37,15 @@ buttonEl.addEventListener("click", async () => {
       throw new Error(helperStatus?.error ?? "Import failed.");
     }
 
+    const warningSummary =
+      Array.isArray(helperStatus.warnings) && helperStatus.warnings.length > 0
+        ? `\nWarnings (${helperStatus.warnings.length}):\n- ${helperStatus.warnings.slice(0, 3).join("\n- ")}${
+            helperStatus.warnings.length > 3 ? "\n- ..." : ""
+          }`
+        : "";
+
     setStatus(
-      `Imported ${helperStatus.itemCount} agenda items and ${helperStatus.attachmentCount} attachments.\nDatabase: ${helperStatus.dbPath ?? "local SQLite"}`,
+      `Imported ${helperStatus.itemCount} agenda items and ${helperStatus.attachmentCount} attachments.\nDatabase: ${helperStatus.dbPath ?? "local SQLite"}${warningSummary}`,
     );
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "Import failed.");

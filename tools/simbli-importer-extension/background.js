@@ -23,9 +23,16 @@ function toBase64(buffer) {
 }
 
 async function fetchAttachmentBinary(attachment) {
-  const response = await fetch(attachment.sourceUrl, {
-    credentials: "include",
-  });
+  let response;
+  try {
+    response = await fetch(attachment.sourceUrl, {
+      credentials: "include",
+    });
+  } catch (error) {
+    throw new Error(
+      `Attachment fetch failed for "${attachment.fileName}": ${error instanceof Error ? error.message : "network error"}`,
+    );
+  }
 
   if (!response.ok) {
     throw new Error(`Attachment download failed: ${attachment.fileName}`);
@@ -56,10 +63,15 @@ async function importMeeting(tabId) {
   }
 
   const items = [];
+  const warnings = [...(meeting.payload.warnings ?? [])];
   for (const item of meeting.payload.items) {
     const supportingDocuments = [];
     for (const attachment of item.supportingDocuments) {
-      supportingDocuments.push(await fetchAttachmentBinary(attachment));
+      try {
+        supportingDocuments.push(await fetchAttachmentBinary(attachment));
+      } catch (error) {
+        warnings.push(error instanceof Error ? error.message : `Attachment fetch failed: ${attachment.fileName}`);
+      }
     }
 
     items.push({
@@ -89,6 +101,7 @@ async function importMeeting(tabId) {
     ok: true,
     ...result,
     dbPath: health.dbPath,
+    warnings,
   };
 }
 

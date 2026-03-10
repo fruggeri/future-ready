@@ -481,6 +481,7 @@ async function scrapeMeeting() {
 
   const nodes = Array.from(document.querySelectorAll("app-itemtree .node-item[data-id]"));
   const items = [];
+  const warnings = [];
   let orderIndex = 0;
 
   for (const node of nodes) {
@@ -512,12 +513,25 @@ async function scrapeMeeting() {
         item = titlesMatch(printItem.title, expectedTitle)
           ? printItem
           : await settleLiveItem(node, orderIndex);
-      } catch {
-        const itemDocument = await fetchItemDocument(itemId);
-        const documentItem = extractItemFromDocument(itemDocument, node, orderIndex);
-        item = titlesMatch(documentItem.title, expectedTitle)
-          ? documentItem
-          : await settleLiveItem(node, orderIndex);
+      } catch (printError) {
+        try {
+          const itemDocument = await fetchItemDocument(itemId);
+          const documentItem = extractItemFromDocument(itemDocument, node, orderIndex);
+          item = titlesMatch(documentItem.title, expectedTitle)
+            ? documentItem
+            : await settleLiveItem(node, orderIndex);
+        } catch (itemError) {
+          item = await settleLiveItem(node, orderIndex);
+          warnings.push(
+            `Item fallback warning for "${expectedTitle}": ${
+              itemError instanceof Error
+                ? itemError.message
+                : printError instanceof Error
+                  ? printError.message
+                  : "fetch failed"
+            }`,
+          );
+        }
       }
     }
 
@@ -532,6 +546,7 @@ async function scrapeMeeting() {
     meetingId: source.meetingId,
     ...getMeetingMetadata(),
     items,
+    warnings,
   };
 }
 

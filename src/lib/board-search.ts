@@ -79,11 +79,136 @@ function buildKeywordTokens(query: string) {
   ]);
 
   return query
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 3 && !stopWords.has(token));
+    .map((rawToken) => rawToken.trim())
+    .filter(Boolean)
+    .map((rawToken) => {
+      const cleaned = rawToken.replace(/[^a-z0-9]/gi, "");
+      return {
+        original: rawToken,
+        cleaned,
+        normalized: cleaned.toLowerCase(),
+      };
+    })
+    .filter(({ cleaned, normalized }) => {
+      if (!cleaned || stopWords.has(normalized)) {
+        return false;
+      }
+
+      if (cleaned.length >= 3) {
+        return true;
+      }
+
+      return /^[A-Z0-9]{2,}$/.test(cleaned);
+    })
+    .map(({ normalized }) => normalized);
+}
+
+function searchBoardArchiveByLikeTerms(tokens: string[], meetingId?: string, limit = 8): BoardSearchHit[] {
+  const usableTokens = tokens
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (usableTokens.length === 0) {
+    return [];
+  }
+
+  const db = getDb();
+  const hasAttachmentTables =
+    tableExists(db, "attachment_content") &&
+    tableExists(db, "attachments");
+
+  const likeClauses = usableTokens
+    .map(() => "(LOWER(ai.title) LIKE ? OR LOWER(ai.plain_text) LIKE ?)")
+    .join(" AND ");
+  const likeParams = usableTokens.flatMap((token) => [`%${token}%`, `%${token}%`]);
+
+  const agendaRows = db
+    .prepare(
+      `
+      SELECT
+        ai.meeting_id,
+        ai.item_id,
+        ai.title,
+        ai.plain_text
+      FROM agenda_items ai
+      WHERE ${likeClauses}
+        AND (? IS NULL OR ai.meeting_id = ?)
+      ORDER BY ai.order_index ASC
+      LIMIT ?
+    `,
+    )
+    .all(...likeParams, meetingId ?? null, meetingId ?? null, limit) as Array<{
+    meeting_id: string;
+    item_id: string;
+    title: string;
+    plain_text: string;
+  }>;
+
+  const attachmentRows = hasAttachmentTables
+    ? (db
+        .prepare(
+          `
+          SELECT
+            ac.meeting_id,
+            ac.item_id,
+            ai.title AS item_title,
+            ac.file_name,
+            ac.extracted_text,
+            at.local_path,
+            at.source_url
+          FROM attachment_content ac
+          JOIN agenda_items ai ON ai.item_id = ac.item_id
+          JOIN attachments at ON at.attachment_key = ac.attachment_key
+          WHERE ${usableTokens
+            .map(() => "(LOWER(ac.file_name) LIKE ? OR LOWER(ac.extracted_text) LIKE ? OR LOWER(ai.title) LIKE ?)")
+            .join(" AND ")}
+            AND (? IS NULL OR ac.meeting_id = ?)
+          ORDER BY ac.extracted_at DESC
+          LIMIT ?
+        `,
+        )
+        .all(
+          ...usableTokens.flatMap((token) => [`%${token}%`, `%${token}%`, `%${token}%`]),
+          meetingId ?? null,
+          meetingId ?? null,
+          limit,
+        ) as Array<{
+        meeting_id: string;
+        item_id: string;
+        item_title: string;
+        file_name: string;
+        extracted_text: string;
+        local_path: string;
+        source_url: string;
+      }>)
+    : [];
+
+  db.close();
+
+  return [
+    ...agendaRows.map((row, index) => ({
+      kind: "agenda" as const,
+      meetingId: row.meeting_id,
+      itemId: row.item_id,
+      title: row.title,
+      itemTitle: row.title,
+      snippet: normalizeSnippet(row.plain_text).slice(0, 240),
+      score: index,
+    })),
+    ...attachmentRows.map((row, index) => ({
+      kind: "attachment" as const,
+      meetingId: row.meeting_id,
+      itemId: row.item_id,
+      title: row.file_name,
+      itemTitle: row.item_title,
+      fileName: row.file_name,
+      localPath: row.local_path,
+      sourceUrl: row.source_url,
+      snippet: normalizeSnippet(row.extracted_text).slice(0, 240),
+      score: 100 + index,
+    })),
+  ].slice(0, limit * 2);
 }
 
 function searchBoardArchiveByKeywords(tokens: string[], meetingId?: string, limit = 8): BoardSearchHit[] {
@@ -247,6 +372,9 @@ export function buildBoardChatContext(query: string, meetingId?: string) {
     const keywordTokens = buildKeywordTokens(query);
     if (keywordTokens.length > 0) {
       hits = searchBoardArchiveByKeywords(keywordTokens, meetingId, 8);
+      if (hits.length === 0) {
+        hits = searchBoardArchiveByLikeTerms(keywordTokens, meetingId, 8);
+      }
     }
   }
 

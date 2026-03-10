@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Rocket } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -11,6 +12,8 @@ type ChildNavItem = {
 };
 
 export function TopNav() {
+    const pathname = usePathname();
+    const isBoardRoute = pathname?.startsWith("/board");
     const [childrenList, setChildrenList] = useState<ChildNavItem[]>([]);
     const [isParentAuthenticated, setIsParentAuthenticated] = useState(false);
 
@@ -45,6 +48,10 @@ export function TopNav() {
         };
     }, []);
 
+    if (isBoardRoute) {
+        return null;
+    }
+
     const handleLogout = async () => {
         try {
             await fetch("/api/auth/logout", { method: "POST" });
@@ -66,6 +73,7 @@ export function TopNav() {
                 <div className="flex items-center gap-5 text-sm font-semibold">
                     <Link href="/" className="text-slate-700 transition-colors hover:text-primary dark:text-slate-200">Home</Link>
                     <Link href="/parent" className="text-slate-700 transition-colors hover:text-primary dark:text-slate-200">Parent</Link>
+                    <Link href="/board" className="text-slate-700 transition-colors hover:text-primary dark:text-slate-200">Board</Link>
 
                     <div className="relative group">
                         <Link href="/kid" className="text-slate-700 transition-colors hover:text-primary dark:text-slate-200">Kid</Link>

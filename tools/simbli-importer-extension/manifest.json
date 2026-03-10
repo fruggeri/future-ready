@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "FutureReady Simbli Importer",
+  "version": "0.1.0",
+  "description": "Import Simbli meeting agendas into a local FutureReady database.",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["https://simbli.eboardsolutions.com/*", "http://127.0.0.1/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "FutureReady Importer"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://simbli.eboardsolutions.com/SB_Meetings/ViewMeeting.aspx*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

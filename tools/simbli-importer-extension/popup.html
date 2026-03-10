@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>FutureReady Importer</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        width: 320px;
+        margin: 0;
+        padding: 16px;
+        color: #172033;
+        background: #f4f7fb;
+      }
+
+      h1 {
+        font-size: 16px;
+        margin: 0 0 8px;
+      }
+
+      p {
+        margin: 0 0 12px;
+        line-height: 1.4;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 13px;
+        margin-bottom: 12px;
+      }
+
+      button {
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 14px;
+        font-weight: 600;
+        background: #1d4ed8;
+        color: white;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        background: #93a6c6;
+        cursor: default;
+      }
+
+      #status {
+        margin-top: 12px;
+        font-size: 13px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>FutureReady Importer</h1>
+    <p>Imports the current Simbli meeting page into your local SQLite database.</p>
+    <label for="helperUrl">Importer Helper URL</label>
+    <input id="helperUrl" type="text" />
+    <button id="importButton">Import This Meeting</button>
+    <div id="status">Ready.</div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

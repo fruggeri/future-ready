@@ -124,9 +124,17 @@ export default function ParentDashboard() {
             const evaluations = activityForChild
                 .map((item) => item.evaluation)
                 .filter((evaluation): evaluation is Evaluation => Boolean(evaluation));
-            const totalXp = evaluations.reduce((sum, evaluation) => sum + evaluation.xpAwarded, 0);
+            const totalXp = evaluations.reduce(
+                (sum: number, evaluation: Evaluation) => sum + evaluation.xpAwarded,
+                0
+            );
             const averageScore = evaluations.length > 0
-                ? Math.round(evaluations.reduce((sum, evaluation) => sum + evaluation.internalScore, 0) / evaluations.length)
+                ? Math.round(
+                    evaluations.reduce(
+                        (sum: number, evaluation: Evaluation) => sum + evaluation.internalScore,
+                        0
+                    ) / evaluations.length
+                )
                 : null;
 
             return [child.id, {

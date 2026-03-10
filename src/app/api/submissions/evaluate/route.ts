@@ -159,7 +159,10 @@ Use a supportive but development-focused tone.`;
             },
             take: 400,
         });
-        const domainXp = domainEvaluations.reduce((sum, item) => sum + (item.evaluation?.xpAwarded || 0), 0);
+        const domainXp = domainEvaluations.reduce(
+            (sum: number, item: (typeof domainEvaluations)[number]) => sum + (item.evaluation?.xpAwarded || 0),
+            0
+        );
         const newDomainLevel = getLevelProgressFromXp(domainXp).level;
 
         const existingChild = await prisma.child.findUnique({

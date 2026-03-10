@@ -169,7 +169,7 @@ export async function GET(req: Request) {
                 progressPercent: activeDomainLevelProgress.progressPercent,
             },
             allDomainProgress,
-            recentWork: recentSubmissions.map((submission) => ({
+            recentWork: recentSubmissions.map((submission: (typeof recentSubmissions)[number]) => ({
                 id: submission.id,
                 createdAt: submission.createdAt,
                 responseText: submission.responseText,

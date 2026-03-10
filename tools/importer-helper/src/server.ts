@@ -3,7 +3,7 @@ import http from "node:http";
 
 import { DEFAULT_HOST, DEFAULT_PORT, DB_PATH, DATA_DIR } from "./config";
 import { ImporterDatabase } from "./database";
-import type { MeetingPayload } from "./types";
+import type { FinishMeetingPayload, MeetingHeaderPayload, MeetingItemPayload, MeetingPayload } from "./types";
 
 const db = new ImporterDatabase();
 const port = Number(process.env.FUTUREREADY_HELPER_PORT ?? DEFAULT_PORT);
@@ -57,6 +57,60 @@ const server = http.createServer(async (request, response) => {
       }
 
       const result = await db.saveMeeting(payload);
+      sendJson(response, 200, { ok: true, ...result });
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      sendJson(response, 500, { error: message });
+      return;
+    }
+  }
+
+  if (request.method === "POST" && request.url === "/imports/start") {
+    try {
+      const payload = await readJson<MeetingHeaderPayload>(request);
+      if (!payload.meetingId || !payload.sourceUrl) {
+        sendJson(response, 400, { error: "Invalid meeting start payload" });
+        return;
+      }
+
+      db.prepareMeeting(payload);
+      sendJson(response, 200, { ok: true, meetingId: payload.meetingId });
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      sendJson(response, 500, { error: message });
+      return;
+    }
+  }
+
+  if (request.method === "POST" && request.url === "/imports/item") {
+    try {
+      const payload = await readJson<MeetingItemPayload>(request);
+      if (!payload.meetingId || !payload.sourceUrl || !payload.item?.itemId) {
+        sendJson(response, 400, { error: "Invalid meeting item payload" });
+        return;
+      }
+
+      const result = await db.saveMeetingItem(payload);
+      sendJson(response, 200, { ok: true, ...result });
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      sendJson(response, 500, { error: message });
+      return;
+    }
+  }
+
+  if (request.method === "POST" && request.url === "/imports/finish") {
+    try {
+      const payload = await readJson<FinishMeetingPayload>(request);
+      if (!payload.meetingId || !payload.sourceUrl) {
+        sendJson(response, 400, { error: "Invalid meeting finish payload" });
+        return;
+      }
+
+      const result = db.finishMeeting(payload);
       sendJson(response, 200, { ok: true, ...result });
       return;
     } catch (error) {

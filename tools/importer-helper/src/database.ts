@@ -5,7 +5,7 @@ import OpenAI from "openai";
 
 import { extractAttachmentText } from "./attachment-text";
 import { ATTACHMENTS_DIR, DB_PATH, LOGS_DIR } from "./config";
-import type { MeetingPayload } from "./types";
+import type { AgendaItemPayload, FinishMeetingPayload, MeetingHeaderPayload, MeetingItemPayload, MeetingPayload } from "./types";
 
 function ensureDirectories() {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -509,6 +509,220 @@ export class ImporterDatabase {
         console.error("Background OpenAI attachment sync failed:", error);
       });
     });
+  }
+
+  private async buildAttachmentArtifacts(
+    meetingId: string,
+    item: AgendaItemPayload,
+    timestamp: string,
+    meetingFolder: string,
+  ) {
+    const itemFolder = path.join(meetingFolder, safeSegment(item.itemId));
+    fs.mkdirSync(itemFolder, { recursive: true });
+
+    const attachmentArtifacts: Array<{
+      attachmentKey: string;
+      attachmentId: string;
+      itemId: string;
+      meetingId: string;
+      fileName: string;
+      sourceUrl: string;
+      localPath: string;
+      mimeType: string;
+      sizeBytes: number;
+      sha256: string;
+      downloadedAt: string;
+      extractedText: string;
+      extractionStatus: "success" | "empty" | "unsupported" | "failed";
+      extractedAt: string;
+    }> = [];
+
+    for (const attachment of item.supportingDocuments) {
+      const attachmentKey = `${item.itemId}::${attachment.attachmentId}::${attachment.fileName}`;
+      const filePath = path.join(itemFolder, `${safeSegment(attachment.attachmentId)}-${safeSegment(attachment.fileName)}`);
+      const buffer = Buffer.from(attachment.base64Data, "base64");
+      fs.writeFileSync(filePath, buffer);
+      const extraction = await extractAttachmentText(attachment.fileName, attachment.mimeType, buffer);
+
+      attachmentArtifacts.push({
+        attachmentKey,
+        attachmentId: attachment.attachmentId,
+        itemId: item.itemId,
+        meetingId,
+        fileName: attachment.fileName,
+        sourceUrl: attachment.sourceUrl,
+        localPath: filePath,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        sha256: attachment.sha256,
+        downloadedAt: timestamp,
+        extractedText: extraction.extractedText,
+        extractionStatus: extraction.extractionStatus,
+        extractedAt: timestamp,
+      });
+    }
+
+    return attachmentArtifacts;
+  }
+
+  prepareMeeting(header: MeetingHeaderPayload) {
+    const transaction = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `
+          INSERT INTO meetings (
+            meeting_id, district_id, source_url, meeting_title, meeting_date_label, agenda_tab_label, last_imported_at
+          ) VALUES (
+            @meetingId, @districtId, @sourceUrl, @meetingTitle, @meetingDateLabel, @agendaTabLabel, @importedAt
+          )
+          ON CONFLICT(meeting_id) DO UPDATE SET
+            district_id = excluded.district_id,
+            source_url = excluded.source_url,
+            meeting_title = excluded.meeting_title,
+            meeting_date_label = excluded.meeting_date_label,
+            agenda_tab_label = excluded.agenda_tab_label,
+            last_imported_at = excluded.last_imported_at
+        `,
+        )
+        .run(header);
+
+      this.db.prepare("DELETE FROM attachment_ai_index WHERE meeting_id = ?").run(header.meetingId);
+      this.db.prepare("DELETE FROM attachments WHERE meeting_id = ?").run(header.meetingId);
+      this.db.prepare("DELETE FROM attachment_content WHERE meeting_id = ?").run(header.meetingId);
+      this.db.prepare("DELETE FROM agenda_items WHERE meeting_id = ?").run(header.meetingId);
+      this.db.prepare("DELETE FROM agenda_items_fts WHERE meeting_id = ?").run(header.meetingId);
+      this.db.prepare("DELETE FROM attachment_content_fts WHERE meeting_id = ?").run(header.meetingId);
+    });
+
+    transaction();
+  }
+
+  async saveMeetingItem(payload: MeetingItemPayload) {
+    const timestamp = payload.importedAt || new Date().toISOString();
+    const meetingFolder = path.join(ATTACHMENTS_DIR, safeSegment(payload.meetingId));
+    fs.mkdirSync(meetingFolder, { recursive: true });
+
+    const attachmentArtifacts = await this.buildAttachmentArtifacts(
+      payload.meetingId,
+      payload.item,
+      timestamp,
+      meetingFolder,
+    );
+
+    const transaction = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `
+          INSERT INTO agenda_items (
+            item_id, meeting_id, parent_item_id, title, order_index, level, path_json, raw_html, plain_text, updated_at
+          ) VALUES (
+            @itemId, @meetingId, @parentItemId, @title, @orderIndex, @level, @pathJson, @rawHtml, @plainText, @updatedAt
+          )
+          ON CONFLICT(item_id) DO UPDATE SET
+            meeting_id = excluded.meeting_id,
+            parent_item_id = excluded.parent_item_id,
+            title = excluded.title,
+            order_index = excluded.order_index,
+            level = excluded.level,
+            path_json = excluded.path_json,
+            raw_html = excluded.raw_html,
+            plain_text = excluded.plain_text,
+            updated_at = excluded.updated_at
+        `,
+        )
+        .run({
+          itemId: payload.item.itemId,
+          meetingId: payload.meetingId,
+          parentItemId: payload.item.parentItemId,
+          title: payload.item.title,
+          orderIndex: payload.item.orderIndex,
+          level: payload.item.level,
+          pathJson: JSON.stringify(payload.item.path),
+          rawHtml: payload.item.rawHtml,
+          plainText: payload.item.plainText,
+          updatedAt: timestamp,
+        });
+
+      this.db
+        .prepare("INSERT INTO agenda_items_fts (item_id, meeting_id, title, plain_text) VALUES (?, ?, ?, ?)")
+        .run(payload.item.itemId, payload.meetingId, payload.item.title, payload.item.plainText);
+
+      const upsertAttachment = this.db.prepare(`
+        INSERT INTO attachments (
+          attachment_key, attachment_id, item_id, meeting_id, file_name, source_url, local_path, mime_type, size_bytes, sha256, downloaded_at
+        ) VALUES (
+          @attachmentKey, @attachmentId, @itemId, @meetingId, @fileName, @sourceUrl, @localPath, @mimeType, @sizeBytes, @sha256, @downloadedAt
+        )
+      `);
+
+      const upsertAttachmentContent = this.db.prepare(`
+        INSERT INTO attachment_content (
+          attachment_key, attachment_id, item_id, meeting_id, file_name, extracted_text, extraction_status, extracted_at
+        ) VALUES (
+          @attachmentKey, @attachmentId, @itemId, @meetingId, @fileName, @extractedText, @extractionStatus, @extractedAt
+        )
+      `);
+
+      const upsertAttachmentFts = this.db.prepare(`
+        INSERT INTO attachment_content_fts (
+          attachment_key, attachment_id, item_id, meeting_id, file_name, extracted_text
+        ) VALUES (
+          @attachmentKey, @attachmentId, @itemId, @meetingId, @fileName, @extractedText
+        )
+      `);
+
+      for (const attachment of attachmentArtifacts) {
+        upsertAttachment.run(attachment);
+        upsertAttachmentContent.run(attachment);
+        upsertAttachmentFts.run(attachment);
+      }
+    });
+
+    transaction();
+    this.syncAttachmentsToOpenAIInBackground(
+      attachmentArtifacts.map((artifact) => ({
+        attachmentKey: artifact.attachmentKey,
+        attachmentId: artifact.attachmentId,
+        itemId: artifact.itemId,
+        meetingId: artifact.meetingId,
+        fileName: artifact.fileName,
+        localPath: artifact.localPath,
+        sha256: artifact.sha256,
+      })),
+    );
+
+    return {
+      itemId: payload.item.itemId,
+      attachmentCount: attachmentArtifacts.length,
+    };
+  }
+
+  finishMeeting(payload: FinishMeetingPayload) {
+    this.db
+      .prepare(
+        `
+        INSERT INTO imports (
+          meeting_id, source_url, imported_at, item_count, attachment_count
+        ) VALUES (?, ?, ?, ?, ?)
+      `,
+      )
+      .run(
+        payload.meetingId,
+        payload.sourceUrl,
+        payload.importedAt,
+        payload.itemCount,
+        payload.attachmentCount,
+      );
+
+    const snapshotPath = path.join(LOGS_DIR, `${safeSegment(payload.meetingId)}-${Date.now()}.json`);
+    fs.writeFileSync(snapshotPath, JSON.stringify(payload, null, 2));
+
+    return {
+      meetingId: payload.meetingId,
+      itemCount: payload.itemCount,
+      attachmentCount: payload.attachmentCount,
+      snapshotPath,
+    };
   }
 
   async saveMeeting(payload: MeetingPayload) {

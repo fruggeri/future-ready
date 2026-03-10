@@ -29,4 +29,23 @@ export type MeetingPayload = {
   meetingDateLabel: string | null;
   agendaTabLabel: string | null;
   items: AgendaItemPayload[];
+  warnings?: string[];
+};
+
+export type MeetingHeaderPayload = Omit<MeetingPayload, "items">;
+
+export type MeetingItemPayload = {
+  meetingId: string;
+  importedAt: string;
+  sourceUrl: string;
+  item: AgendaItemPayload;
+};
+
+export type FinishMeetingPayload = {
+  meetingId: string;
+  importedAt: string;
+  sourceUrl: string;
+  itemCount: number;
+  attachmentCount: number;
+  warnings?: string[];
 };

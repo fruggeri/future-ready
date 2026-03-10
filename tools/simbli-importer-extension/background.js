@@ -62,8 +62,30 @@ async function importMeeting(tabId) {
     throw new Error(meeting?.error ?? "Could not scrape the current meeting page.");
   }
 
-  const items = [];
   const warnings = [...(meeting.payload.warnings ?? [])];
+  const startResponse = await fetch(`${helperUrl}/imports/start`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      importedAt: meeting.payload.importedAt,
+      sourceUrl: meeting.payload.sourceUrl,
+      districtId: meeting.payload.districtId,
+      meetingId: meeting.payload.meetingId,
+      meetingTitle: meeting.payload.meetingTitle,
+      meetingDateLabel: meeting.payload.meetingDateLabel,
+      agendaTabLabel: meeting.payload.agendaTabLabel,
+    }),
+  });
+
+  if (!startResponse.ok) {
+    const details = await startResponse.json().catch(() => null);
+    throw new Error(details?.error ?? "Failed to start the meeting import.");
+  }
+
+  let attachmentCount = 0;
+
   for (const item of meeting.payload.items) {
     const supportingDocuments = [];
     for (const attachment of item.supportingDocuments) {
@@ -74,29 +96,51 @@ async function importMeeting(tabId) {
       }
     }
 
-    items.push({
-      ...item,
-      supportingDocuments,
+    attachmentCount += supportingDocuments.length;
+
+    const itemResponse = await fetch(`${helperUrl}/imports/item`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        meetingId: meeting.payload.meetingId,
+        importedAt: meeting.payload.importedAt,
+        sourceUrl: meeting.payload.sourceUrl,
+        item: {
+          ...item,
+          supportingDocuments,
+        },
+      }),
     });
+
+    if (!itemResponse.ok) {
+      const details = await itemResponse.json().catch(() => null);
+      throw new Error(details?.error ?? `Failed to save item: ${item.title}`);
+    }
   }
 
-  const saveResponse = await fetch(`${helperUrl}/imports/meeting`, {
+  const finishResponse = await fetch(`${helperUrl}/imports/finish`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      ...meeting.payload,
-      items,
+      meetingId: meeting.payload.meetingId,
+      importedAt: meeting.payload.importedAt,
+      sourceUrl: meeting.payload.sourceUrl,
+      itemCount: meeting.payload.items.length,
+      attachmentCount,
+      warnings,
     }),
   });
 
-  if (!saveResponse.ok) {
-    const details = await saveResponse.json().catch(() => null);
-    throw new Error(details?.error ?? "Failed to save the meeting locally.");
+  if (!finishResponse.ok) {
+    const details = await finishResponse.json().catch(() => null);
+    throw new Error(details?.error ?? "Failed to finish the meeting import.");
   }
 
-  const result = await saveResponse.json();
+  const result = await finishResponse.json();
   return {
     ok: true,
     ...result,

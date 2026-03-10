@@ -94,7 +94,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [activeRailPanel, setActiveRailPanel] = useState<"search" | "chat" | null>(null);
+  const [activeWorkspace, setActiveWorkspace] = useState<"search" | "chat" | null>(null);
 
   useEffect(() => {
     setSelectedMeetingId(initialMeeting?.meetingId ?? meetings[0]?.meetingId ?? "");
@@ -121,10 +121,6 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
     null;
 
   const textParagraphs = selectedItem ? paragraphsFromText(selectedItem.plainText) : [];
-  const contentColumnClass =
-    activeRailPanel === null
-      ? "2xl:grid-cols-[290px_330px_minmax(0,1fr)_360px] xl:grid-cols-[280px_320px_minmax(0,1fr)_340px]"
-      : "2xl:grid-cols-[280px_320px_minmax(0,0.82fr)_minmax(420px,1.18fr)] xl:grid-cols-[270px_300px_minmax(0,0.8fr)_minmax(380px,1.2fr)]";
 
   function selectMeeting(meetingId: string) {
     setSelectedMeetingId(meetingId);
@@ -253,8 +249,134 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
           </div>
         </section>
 
-        <section className={`grid gap-6 ${contentColumnClass}`}>
-          <aside className="rounded-[28px] border border-slate-200/70 bg-white/92 p-4 shadow-[0_18px_50px_rgba(28,48,89,0.08)]">
+        <section className="rounded-[28px] border border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_50px_rgba(28,48,89,0.08)]">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Archive Workspace</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Open either search or archive chat above the agenda workspace.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveWorkspace((current) => (current === "search" ? null : "search"))}
+                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  activeWorkspace === "search"
+                    ? "bg-slate-900 text-white"
+                    : "border border-slate-200 bg-slate-50 text-slate-700"
+                }`}
+              >
+                <FileSearch className="h-4 w-4" />
+                Search Archive
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveWorkspace((current) => (current === "chat" ? null : "chat"))}
+                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  activeWorkspace === "chat"
+                    ? "bg-emerald-600 text-white"
+                    : "border border-slate-200 bg-slate-50 text-slate-700"
+                }`}
+              >
+                <MessageSquareText className="h-4 w-4" />
+                Ask The Archive
+              </button>
+            </div>
+          </div>
+
+          {activeWorkspace === "search" ? (
+            <section className="mt-5 rounded-[24px] border border-sky-200 bg-[linear-gradient(180deg,#f7fbff_0%,#ffffff_100%)] p-5">
+              <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <FileSearch className="h-4 w-4 text-sky-600" />
+                Search Archive
+              </div>
+              <div className="mb-3 flex gap-2">
+                <button type="button" onClick={() => setSearchScope("current")} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${searchScope === "current" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>This meeting</button>
+                <button type="button" onClick={() => setSearchScope("all")} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${searchScope === "all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>All meetings</button>
+              </div>
+              <form onSubmit={runSearch} className="flex flex-col gap-3 lg:flex-row">
+                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                  <Search className="h-4 w-4 text-slate-400" />
+                  <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search agenda and file text" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
+                </label>
+                <button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50" disabled={searchLoading}>
+                  {searchLoading ? "Searching..." : "Search"}
+                </button>
+              </form>
+              <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50/70 p-3">
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Results</div>
+                <div className="max-h-[360px] min-w-0 space-y-3 overflow-y-auto pr-1">
+                  {searchError ? (
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                      {searchError}
+                    </div>
+                  ) : searchResults.length > 0 ? (
+                    searchResults.map((result, index) => (
+                      <button key={`${result.kind}-${index}-${result.itemId}`} type="button" onClick={() => openResult(result)} className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white p-4 text-left hover:border-slate-300 hover:bg-slate-50">
+                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">{result.kind === "attachment" ? "Attachment Match" : "Agenda Match"}</p>
+                        <p className="mt-1 break-words text-sm font-semibold text-slate-900">{result.kind === "attachment" ? result.fileName : result.title}</p>
+                        <p className="mt-1 text-xs text-slate-500">{result.itemTitle} · Meeting {result.meetingId}</p>
+                        <p className="mt-3 text-sm leading-6 text-slate-600">{result.snippet || "No preview available."}</p>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No search results yet.</div>
+                  )}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {activeWorkspace === "chat" ? (
+            <section className="mt-5 rounded-[24px] border border-emerald-200 bg-[linear-gradient(180deg,#f6fffb_0%,#ffffff_100%)] p-5">
+              <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <MessageSquareText className="h-4 w-4 text-emerald-600" />
+                Ask The Archive
+              </div>
+              <div className="mb-3 flex gap-2">
+                <button type="button" onClick={() => setChatScope("current")} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${chatScope === "current" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>This meeting</button>
+                <button type="button" onClick={() => setChatScope("all")} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${chatScope === "all" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>All meetings</button>
+              </div>
+              <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-3">
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Conversation</div>
+                <div className="max-h-[360px] min-w-0 space-y-4 overflow-y-auto pr-1">
+                  {chatMessages.length > 0 ? (
+                    chatMessages.map((message, index) => (
+                      <div key={`${message.role}-${index}`} className={`rounded-3xl px-4 py-3 ${message.role === "user" ? "ml-8 bg-slate-900 text-white" : "mr-8 border border-slate-200 bg-white text-slate-800"}`}>
+                        <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
+                        {message.role === "assistant" && message.citations && message.citations.length > 0 ? (
+                          <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                            {message.citations.slice(0, 3).map((citation, citationIndex) => (
+                              <button key={`${citation.kind}-${citationIndex}-${citation.itemId}`} type="button" onClick={() => openResult(citation)} className="block w-full rounded-2xl bg-slate-50 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-100">
+                                <span className="font-semibold text-slate-800">{citation.kind === "attachment" ? citation.fileName : citation.title}</span>
+                                <span className="ml-1">· {citation.itemTitle}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No chat yet.</div>
+                  )}
+                </div>
+              </div>
+              <form onSubmit={sendChatMessage} className="mt-4 flex flex-col gap-3 lg:flex-row">
+                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                  <MessageSquareText className="h-4 w-4 text-slate-400" />
+                  <input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ask about contracts, votes, finances, or attachments" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
+                </label>
+                <button type="submit" className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50" disabled={chatLoading}>
+                  {chatLoading ? "Thinking..." : "Ask"}
+                </button>
+              </form>
+            </section>
+          ) : null}
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[290px_330px_minmax(0,1fr)]">
+          <aside className="min-w-0 rounded-[28px] border border-slate-200/70 bg-white/92 p-4 shadow-[0_18px_50px_rgba(28,48,89,0.08)]">
             <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700">
               <Database className="h-4 w-4 text-sky-600" />
               Imported Meetings
@@ -300,7 +422,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
             </div>
           </aside>
 
-          <aside className="rounded-[28px] border border-slate-200/70 bg-white/94 p-4 shadow-[0_18px_50px_rgba(28,48,89,0.08)]">
+          <aside className="min-w-0 rounded-[28px] border border-slate-200/70 bg-white/94 p-4 shadow-[0_18px_50px_rgba(28,48,89,0.08)]">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                 <LayoutPanelLeft className="h-4 w-4 text-emerald-600" />
@@ -345,10 +467,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
             </div>
           </aside>
 
-          <section
-            className="rounded-[30px] border border-slate-200/80 bg-white/96 p-5 shadow-[0_22px_60px_rgba(28,48,89,0.1)]"
-            onMouseDown={() => setActiveRailPanel(null)}
-          >
+          <section className="min-w-0 rounded-[30px] border border-slate-200/80 bg-white/96 p-5 shadow-[0_22px_60px_rgba(28,48,89,0.1)]">
             {!meeting || !selectedItem ? (
               <div className="flex min-h-[500px] items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-slate-50 text-center">
                 <div>
@@ -381,8 +500,8 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
                   </div>
                 </div>
 
-                <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
-                  <article className="rounded-[26px] border border-slate-200/80 bg-slate-50/65 p-5">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]">
+                  <article className="min-w-0 rounded-[26px] border border-slate-200/80 bg-slate-50/65 p-5">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Content</p>
@@ -405,7 +524,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
                   </article>
 
                   <aside className="space-y-4">
-                    <div className="rounded-[26px] border border-slate-200/80 bg-white p-5">
+                    <div className="min-w-0 rounded-[26px] border border-slate-200/80 bg-white p-5">
                       <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                         <FileStack className="h-4 w-4 text-amber-600" />
                         Supporting Documents
@@ -413,8 +532,8 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
                       <div className="mt-4 space-y-3">
                         {selectedItem.attachments.length > 0 ? (
                           selectedItem.attachments.map((attachment) => (
-                            <div key={attachment.attachmentKey} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
-                              <p className="text-sm font-semibold text-slate-900">{attachment.fileName}</p>
+                            <div key={attachment.attachmentKey} className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                              <p className="break-words text-sm font-semibold text-slate-900">{attachment.fileName}</p>
                               <p className="mt-1 text-xs text-slate-500">{attachment.mimeType} · {formatBytes(attachment.sizeBytes)}</p>
                               <div className="mt-3 flex flex-wrap gap-2">
                                 <a href={`file://${attachment.localPath}`} className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">
@@ -434,7 +553,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
                       </div>
                     </div>
 
-                    <div className="rounded-[26px] border border-slate-200/80 bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)] p-5">
+                    <div className="min-w-0 rounded-[26px] border border-slate-200/80 bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)] p-5">
                       <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Archive Notes</p>
                       <div className="mt-3 space-y-3 text-sm text-slate-600">
                         <p>Meeting ID: <span className="font-semibold text-slate-800">{meeting.meetingId}</span></p>
@@ -449,108 +568,6 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
             )}
           </section>
 
-          <aside className="grid gap-4 xl:col-span-1">
-            <section
-              className={`rounded-[28px] border bg-white/95 p-5 shadow-[0_18px_50px_rgba(28,48,89,0.08)] transition-all ${
-                activeRailPanel === "search"
-                  ? "border-sky-300 shadow-[0_24px_60px_rgba(14,116,144,0.14)]"
-                  : "border-slate-200/80"
-              }`}
-              onMouseDown={() => setActiveRailPanel("search")}
-              onFocusCapture={() => setActiveRailPanel("search")}
-            >
-              <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <FileSearch className="h-4 w-4 text-sky-600" />
-                Search Archive
-              </div>
-              <div className="mb-3 flex gap-2">
-                <button type="button" onClick={() => setSearchScope("current")} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${searchScope === "current" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>This meeting</button>
-                <button type="button" onClick={() => setSearchScope("all")} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${searchScope === "all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>All meetings</button>
-              </div>
-              <form onSubmit={runSearch} className="flex gap-3">
-                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <Search className="h-4 w-4 text-slate-400" />
-                  <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search agenda and file text" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
-                </label>
-                <button type="submit" className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={searchLoading}>
-                  {searchLoading ? "Searching..." : "Search"}
-                </button>
-              </form>
-              <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50/70 p-3">
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Results</div>
-                <div className="max-h-[290px] space-y-3 overflow-y-auto pr-1">
-                  {searchError ? (
-                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                      {searchError}
-                    </div>
-                  ) : searchResults.length > 0 ? (
-                    searchResults.map((result, index) => (
-                      <button key={`${result.kind}-${index}-${result.itemId}`} type="button" onClick={() => openResult(result)} className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left hover:border-slate-300 hover:bg-slate-50">
-                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">{result.kind === "attachment" ? "Attachment Match" : "Agenda Match"}</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900">{result.kind === "attachment" ? result.fileName : result.title}</p>
-                        <p className="mt-1 text-xs text-slate-500">{result.itemTitle} · Meeting {result.meetingId}</p>
-                        <p className="mt-3 text-sm leading-6 text-slate-600">{result.snippet || "No preview available."}</p>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No search results yet.</div>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <section
-              className={`rounded-[28px] border bg-white/95 p-5 shadow-[0_18px_50px_rgba(28,48,89,0.08)] transition-all ${
-                activeRailPanel === "chat"
-                  ? "border-emerald-300 shadow-[0_24px_60px_rgba(5,150,105,0.14)]"
-                  : "border-slate-200/80"
-              }`}
-              onMouseDown={() => setActiveRailPanel("chat")}
-              onFocusCapture={() => setActiveRailPanel("chat")}
-            >
-              <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <MessageSquareText className="h-4 w-4 text-emerald-600" />
-                Ask The Archive
-              </div>
-              <div className="mb-3 flex gap-2">
-                <button type="button" onClick={() => setChatScope("current")} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${chatScope === "current" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>This meeting</button>
-                <button type="button" onClick={() => setChatScope("all")} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${chatScope === "all" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>All meetings</button>
-              </div>
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-3">
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Conversation</div>
-                <div className="max-h-[340px] space-y-4 overflow-y-auto pr-1">
-                  {chatMessages.length > 0 ? (
-                    chatMessages.map((message, index) => (
-                      <div key={`${message.role}-${index}`} className={`rounded-3xl px-4 py-3 ${message.role === "user" ? "ml-8 bg-slate-900 text-white" : "mr-8 border border-slate-200 bg-white text-slate-800"}`}>
-                        <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
-                        {message.role === "assistant" && message.citations && message.citations.length > 0 ? (
-                          <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
-                            {message.citations.slice(0, 3).map((citation, citationIndex) => (
-                              <button key={`${citation.kind}-${citationIndex}-${citation.itemId}`} type="button" onClick={() => openResult(citation)} className="block w-full rounded-2xl bg-slate-50 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-100">
-                                <span className="font-semibold text-slate-800">{citation.kind === "attachment" ? citation.fileName : citation.title}</span>
-                                <span className="ml-1">· {citation.itemTitle}</span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No chat yet.</div>
-                  )}
-                </div>
-              </div>
-              <form onSubmit={sendChatMessage} className="mt-4 flex gap-3">
-                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <MessageSquareText className="h-4 w-4 text-slate-400" />
-                  <input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ask about contracts, votes, finances, or attachments" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
-                </label>
-                <button type="submit" className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={chatLoading}>
-                  {chatLoading ? "Thinking..." : "Ask"}
-                </button>
-              </form>
-            </section>
-          </aside>
         </section>
       </main>
     </div>

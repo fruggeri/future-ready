@@ -82,6 +82,28 @@ function normalizeText(value) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function normalizeTitle(value) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function titlesMatch(left, right) {
+  const normalizedLeft = normalizeTitle(left);
+  const normalizedRight = normalizeTitle(right);
+
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  return (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft)
+  );
+}
+
 function sanitizeContentClone(contentRoot) {
   const clone = contentRoot.cloneNode(true);
   clone.querySelectorAll("script, style, app-supporting-docs, .position-relative.supporting-dcmnt").forEach((node) => node.remove());
@@ -183,6 +205,10 @@ function currentPaneContentSnapshot() {
     .join("||");
 
   return `${text.slice(0, 1200)}::${attachmentKeys}`;
+}
+
+function hasUsefulLiveContent(item) {
+  return normalizeText(item?.plainText ?? "").length >= 40 || (item?.supportingDocuments?.length ?? 0) > 0;
 }
 
 function extractStructuredText(contentRoot) {
@@ -391,7 +417,7 @@ async function clickAndWaitForLiveContent(nodeItem) {
     const currentTitle = textContentOf(document.querySelector(".item-title-vm"));
     const currentContent = currentPaneContentSnapshot();
     const printItemUrl = getCurrentPrintItemUrl();
-    const titleMatches = currentTitle === expectedTitle || currentTitle.includes(expectedTitle) || expectedTitle.includes(currentTitle);
+    const titleMatches = titlesMatch(currentTitle, expectedTitle);
     const contentChanged = currentContent !== beforeContent;
     const hasUsefulText = normalizeText(getLiveDetailRoot()?.textContent ?? "").length > 0;
     const printUrlChanged = Boolean(printItemUrl) && printItemUrl !== beforePrintItemUrl;
@@ -403,10 +429,7 @@ async function clickAndWaitForLiveContent(nodeItem) {
       const settledContent = currentPaneContentSnapshot();
       const settledTitle = textContentOf(document.querySelector(".item-title-vm"));
       const settledPrintItemUrl = getCurrentPrintItemUrl();
-      const settledTitleMatches =
-        settledTitle === expectedTitle ||
-        settledTitle.includes(expectedTitle) ||
-        expectedTitle.includes(settledTitle);
+      const settledTitleMatches = titlesMatch(settledTitle, expectedTitle);
       const settledContentChanged = settledContent !== beforeContent;
       const settledPrintUrlMatches =
         !nodeId || !settledPrintItemUrl || decodeURIComponent(settledPrintItemUrl).includes(nodeId);
@@ -426,6 +449,30 @@ async function clickAndWaitForLiveContent(nodeItem) {
   };
 }
 
+async function settleLiveItem(nodeItem, orderIndex) {
+  const expectedTitle = textContentOf(nodeItem.querySelector(":scope > .node-title .level-strip span"));
+  let bestItem = extractCurrentLiveItem(nodeItem, orderIndex);
+
+  if (titlesMatch(bestItem.title, expectedTitle) && hasUsefulLiveContent(bestItem)) {
+    return bestItem;
+  }
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await sleep(250);
+    const candidate = extractCurrentLiveItem(nodeItem, orderIndex);
+    const candidateTitle = candidate.title || expectedTitle;
+
+    if (titlesMatch(candidateTitle, expectedTitle)) {
+      bestItem = candidate;
+      if (hasUsefulLiveContent(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return bestItem;
+}
+
 async function scrapeMeeting() {
   const source = parseSourceUrl();
   if (!source.meetingId) {
@@ -441,28 +488,36 @@ async function scrapeMeeting() {
     if (!itemId) {
       continue;
     }
+    const expectedTitle = textContentOf(node.querySelector(":scope > .node-title .level-strip span"));
     let item = null;
     try {
       const liveState = await clickAndWaitForLiveContent(node);
-      item = extractCurrentLiveItem(node, orderIndex);
+      item = await settleLiveItem(node, orderIndex);
       const printDocument = await fetchPrintItemDocument(liveState.printItemUrl || buildPrintItemUrl(itemId));
       const printItem = extractPrintItem(printDocument, node, orderIndex);
       item = {
         ...item,
-        rawHtml: printItem.plainText ? printItem.rawHtml : item.rawHtml,
-        plainText: printItem.plainText || item.plainText,
+        rawHtml: titlesMatch(printItem.title, expectedTitle) && printItem.plainText ? printItem.rawHtml : item.rawHtml,
+        plainText:
+          titlesMatch(printItem.title, expectedTitle) && printItem.plainText ? printItem.plainText : item.plainText,
         supportingDocuments: dedupeSupportingDocuments([
           ...item.supportingDocuments,
-          ...printItem.supportingDocuments,
+          ...(titlesMatch(printItem.title, expectedTitle) ? printItem.supportingDocuments : []),
         ]),
       };
     } catch {
       try {
         const printDocument = await fetchPrintItemDocument(getCurrentPrintItemUrl() || buildPrintItemUrl(itemId));
-        item = extractPrintItem(printDocument, node, orderIndex);
+        const printItem = extractPrintItem(printDocument, node, orderIndex);
+        item = titlesMatch(printItem.title, expectedTitle)
+          ? printItem
+          : await settleLiveItem(node, orderIndex);
       } catch {
         const itemDocument = await fetchItemDocument(itemId);
-        item = extractItemFromDocument(itemDocument, node, orderIndex);
+        const documentItem = extractItemFromDocument(itemDocument, node, orderIndex);
+        item = titlesMatch(documentItem.title, expectedTitle)
+          ? documentItem
+          : await settleLiveItem(node, orderIndex);
       }
     }
 

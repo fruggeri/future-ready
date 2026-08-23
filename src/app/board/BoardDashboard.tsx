@@ -44,10 +44,16 @@ type ChatMessage = {
 
 function formatDateLabel(value: string | null) {
   if (!value) return "Date unavailable";
-  const normalized = value.replace(" - ", " ");
-  const parsed = new Date(normalized);
+  const match = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return value;
+
+  const [, month, day, year, hour, minute, meridiem] = match;
+  let hour24 = Number(hour) % 12;
+  if (meridiem.toUpperCase() === "PM") hour24 += 12;
+  const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), hour24, Number(minute)));
   if (Number.isNaN(parsed.getTime())) return value;
   return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -59,6 +65,7 @@ function formatDateLabel(value: string | null) {
 
 function formatTimestamp(value: string) {
   return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
     month: "short",
     day: "numeric",
     year: "numeric",

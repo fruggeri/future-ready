@@ -1,5 +1,6 @@
 services:
   web:
+    image: future-ready:latest
     build:
       context: ..
       dockerfile: Dockerfile
@@ -29,6 +30,7 @@ services:
       traefik.http.services.future-ready-web.loadbalancer.server.port: "3000"
 
   helper:
+    image: future-ready:latest
     build:
       context: ..
       dockerfile: Dockerfile

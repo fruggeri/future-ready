@@ -12,7 +12,7 @@ RUN apt-get update \
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts tsconfig.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 COPY . .
 RUN npm run build

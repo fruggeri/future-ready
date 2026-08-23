@@ -1,6 +1,7 @@
 const statusEl = document.getElementById("status");
 const buttonEl = document.getElementById("importButton");
 const helperUrlEl = document.getElementById("helperUrl");
+const LOCAL_HELPER_URL = "http://127.0.0.1:4318";
 
 function setStatus(message) {
   statusEl.textContent = message;
@@ -12,19 +13,15 @@ async function getActiveTab() {
 }
 
 async function loadHelperUrl() {
-  const response = await chrome.runtime.sendMessage({ type: "GET_HELPER_URL" });
-  helperUrlEl.value = response?.helperUrl ?? "http://127.0.0.1:4318";
-}
-
-helperUrlEl.addEventListener("change", async () => {
   await chrome.runtime.sendMessage({
     type: "SET_HELPER_URL",
-    helperUrl: helperUrlEl.value.trim(),
+    helperUrl: LOCAL_HELPER_URL,
   });
-});
+  helperUrlEl.value = LOCAL_HELPER_URL;
+}
 
 loadHelperUrl().catch(() => {
-  helperUrlEl.value = "http://127.0.0.1:4318";
+  helperUrlEl.value = LOCAL_HELPER_URL;
 });
 
 buttonEl.addEventListener("click", async () => {

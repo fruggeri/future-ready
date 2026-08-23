@@ -20,6 +20,8 @@ Phase 1 adds a local importer for Simbli meeting agendas.
 npm run importer:helper
 ```
 
+On the configured Mac, `com.futureready.importer-helper` runs this command automatically at login and restarts it if it exits.
+
 2. In Chrome, open `chrome://extensions`.
 3. Enable Developer Mode.
 4. Choose "Load unpacked".
@@ -30,14 +32,13 @@ npm run importer:helper
 ```
 
 6. Open a Simbli meeting page.
-7. In the extension popup, confirm the `Importer Helper URL`.
-8. For local development, use:
+7. The extension popup locks the `Importer Helper URL` to:
 
 ```text
 http://127.0.0.1:4318
 ```
 
-9. Keep the extension pointed at the local helper. The helper saves the meeting locally first, then syncs it to the hosted helper configured through:
+8. Keep the extension pointed at the local helper. The helper saves the meeting locally first, then syncs it to the hosted helper configured through:
 
 ```env
 FUTUREREADY_SYNC_URL=https://board-briefing.187.77.12.18.sslip.io/helper
@@ -46,9 +47,9 @@ FUTUREREADY_LIVE_APP_URL=https://board-briefing.187.77.12.18.sslip.io
 
 The sync request uses `FUTUREREADY_SYNC_TOKEN`, falling back to `JWT_SECRET`. The hosted helper requires `FUTUREREADY_IMPORT_TOKEN` and must use the same secret.
 
-10. Click the FutureReady importer extension icon.
-11. Click `Import This Meeting`.
-12. After a successful live sync, the extension opens the imported meeting in the live board app.
+9. Click the FutureReady importer extension icon.
+10. Click `Import This Meeting`.
+11. After a successful live sync, the extension opens the imported meeting in the live board app.
 
 ## Output
 

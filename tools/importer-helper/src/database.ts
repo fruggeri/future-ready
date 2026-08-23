@@ -123,6 +123,16 @@ export class ImporterDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_attachment_ai_index_meeting_id ON attachment_ai_index(meeting_id);
 
+      CREATE TABLE IF NOT EXISTS meeting_sync_status (
+        meeting_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        last_attempted_at TEXT,
+        synced_at TEXT,
+        FOREIGN KEY(meeting_id) REFERENCES meetings(meeting_id) ON DELETE CASCADE
+      );
+
       CREATE VIRTUAL TABLE IF NOT EXISTS agenda_items_fts USING fts5(
         item_id UNINDEXED,
         meeting_id UNINDEXED,
@@ -563,6 +573,167 @@ export class ImporterDatabase {
     }
 
     return attachmentArtifacts;
+  }
+
+  getMeetingPayload(meetingId: string): MeetingPayload {
+    const meeting = this.db
+      .prepare(
+        `
+        SELECT meeting_id, district_id, source_url, meeting_title, meeting_date_label, agenda_tab_label, last_imported_at
+        FROM meetings
+        WHERE meeting_id = ?
+      `,
+      )
+      .get(meetingId) as
+      | {
+          meeting_id: string;
+          district_id: string | null;
+          source_url: string;
+          meeting_title: string;
+          meeting_date_label: string | null;
+          agenda_tab_label: string | null;
+          last_imported_at: string;
+        }
+      | undefined;
+
+    if (!meeting) {
+      throw new Error(`Meeting ${meetingId} was not found in the local archive.`);
+    }
+
+    const itemRows = this.db
+      .prepare(
+        `
+        SELECT item_id, parent_item_id, title, order_index, level, path_json, raw_html, plain_text
+        FROM agenda_items
+        WHERE meeting_id = ?
+        ORDER BY order_index ASC
+      `,
+      )
+      .all(meetingId) as Array<{
+      item_id: string;
+      parent_item_id: string | null;
+      title: string;
+      order_index: number;
+      level: number;
+      path_json: string;
+      raw_html: string;
+      plain_text: string;
+    }>;
+
+    const attachmentRows = this.db
+      .prepare(
+        `
+        SELECT attachment_id, item_id, file_name, source_url, local_path, mime_type, size_bytes, sha256
+        FROM attachments
+        WHERE meeting_id = ?
+        ORDER BY downloaded_at ASC, file_name ASC
+      `,
+      )
+      .all(meetingId) as Array<{
+      attachment_id: string;
+      item_id: string;
+      file_name: string;
+      source_url: string;
+      local_path: string;
+      mime_type: string;
+      size_bytes: number;
+      sha256: string;
+    }>;
+
+    const attachmentsByItem = new Map<string, AgendaItemPayload["supportingDocuments"]>();
+    for (const attachment of attachmentRows) {
+      if (!fs.existsSync(attachment.local_path)) {
+        throw new Error(`Local attachment is missing: ${attachment.file_name}`);
+      }
+
+      const current = attachmentsByItem.get(attachment.item_id) ?? [];
+      current.push({
+        attachmentId: attachment.attachment_id,
+        fileName: attachment.file_name,
+        sourceUrl: attachment.source_url,
+        mimeType: attachment.mime_type,
+        sizeBytes: attachment.size_bytes,
+        sha256: attachment.sha256,
+        base64Data: fs.readFileSync(attachment.local_path).toString("base64"),
+      });
+      attachmentsByItem.set(attachment.item_id, current);
+    }
+
+    return {
+      importedAt: meeting.last_imported_at,
+      sourceUrl: meeting.source_url,
+      districtId: meeting.district_id,
+      meetingId: meeting.meeting_id,
+      meetingTitle: meeting.meeting_title,
+      meetingDateLabel: meeting.meeting_date_label,
+      agendaTabLabel: meeting.agenda_tab_label,
+      items: itemRows.map((item) => ({
+        itemId: item.item_id,
+        parentItemId: item.parent_item_id,
+        title: item.title,
+        orderIndex: item.order_index,
+        level: item.level,
+        path: JSON.parse(item.path_json) as string[],
+        rawHtml: item.raw_html,
+        plainText: item.plain_text,
+        supportingDocuments: attachmentsByItem.get(item.item_id) ?? [],
+      })),
+    };
+  }
+
+  queueMeetingSync(meetingId: string) {
+    this.db
+      .prepare(
+        `
+        INSERT INTO meeting_sync_status (meeting_id, status, attempts)
+        VALUES (?, 'pending', 0)
+        ON CONFLICT(meeting_id) DO UPDATE SET
+          status = 'pending',
+          last_error = NULL,
+          synced_at = NULL
+      `,
+      )
+      .run(meetingId);
+  }
+
+  getPendingMeetingIds() {
+    return (
+      this.db
+        .prepare(
+          `
+          SELECT meeting_id
+          FROM meeting_sync_status
+          WHERE status IN ('pending', 'failed')
+          ORDER BY COALESCE(last_attempted_at, '') ASC
+        `,
+        )
+        .all() as Array<{ meeting_id: string }>
+    ).map((row) => row.meeting_id);
+  }
+
+  markMeetingSyncSucceeded(meetingId: string) {
+    const timestamp = new Date().toISOString();
+    this.db
+      .prepare(
+        `
+        UPDATE meeting_sync_status
+        SET status = 'synced', attempts = attempts + 1, last_error = NULL, last_attempted_at = ?, synced_at = ?
+        WHERE meeting_id = ?
+      `,
+      )
+      .run(timestamp, timestamp, meetingId);
+  }
+
+  markMeetingSyncFailed(meetingId: string, message: string) {
+    this.db
+      .prepare(
+        `
+        UPDATE meeting_sync_status
+        SET status = 'failed', attempts = attempts + 1, last_error = ?, last_attempted_at = ?
+        WHERE meeting_id = ?
+      `,
+      )
+      .run(message, new Date().toISOString(), meetingId);
   }
 
   prepareMeeting(header: MeetingHeaderPayload) {

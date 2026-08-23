@@ -37,9 +37,18 @@ npm run importer:helper
 http://127.0.0.1:4318
 ```
 
-9. For hosted deployment, set this to your hosted helper endpoint.
+9. Keep the extension pointed at the local helper. The helper saves the meeting locally first, then syncs it to the hosted helper configured through:
+
+```env
+FUTUREREADY_SYNC_URL=https://board-briefing.187.77.12.18.sslip.io/helper
+FUTUREREADY_LIVE_APP_URL=https://board-briefing.187.77.12.18.sslip.io
+```
+
+The sync request uses `FUTUREREADY_SYNC_TOKEN`, falling back to `JWT_SECRET`. The hosted helper requires `FUTUREREADY_IMPORT_TOKEN` and must use the same secret.
+
 10. Click the FutureReady importer extension icon.
 11. Click `Import This Meeting`.
+12. After a successful live sync, the extension opens the imported meeting in the live board app.
 
 ## Output
 
@@ -60,6 +69,8 @@ http://127.0.0.1:4318
 ```text
 ~/FutureReadyData/logs/
 ```
+
+- Failed live syncs remain queued in the local SQLite database and retry once per minute while the helper is running.
 
 ## Current MVP behavior
 

@@ -1,13 +1,16 @@
 import "dotenv/config";
 import http from "node:http";
+import crypto from "node:crypto";
 
-import { DEFAULT_HOST, DEFAULT_PORT, DB_PATH, DATA_DIR } from "./config";
+import { DEFAULT_HOST, DEFAULT_PORT, DB_PATH, DATA_DIR, IMPORT_TOKEN, SYNC_URL } from "./config";
 import { ImporterDatabase } from "./database";
+import { syncMeetingToRemote } from "./sync";
 import type { FinishMeetingPayload, MeetingHeaderPayload, MeetingItemPayload, MeetingPayload } from "./types";
 
 const db = new ImporterDatabase();
 const port = Number(process.env.FUTUREREADY_HELPER_PORT ?? DEFAULT_PORT);
 const host = process.env.FUTUREREADY_HELPER_HOST ?? DEFAULT_HOST;
+let syncInProgress = false;
 
 function sendJson(response: http.ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
@@ -27,6 +30,44 @@ async function readJson<T>(request: http.IncomingMessage): Promise<T> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as T;
 }
 
+function isAuthorized(request: http.IncomingMessage) {
+  if (!IMPORT_TOKEN) {
+    return true;
+  }
+
+  const authorization = request.headers.authorization ?? "";
+  const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const expectedBuffer = Buffer.from(IMPORT_TOKEN);
+  const suppliedBuffer = Buffer.from(supplied);
+  return suppliedBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(suppliedBuffer, expectedBuffer);
+}
+
+async function syncQueuedMeetings(targetMeetingId?: string) {
+  if (!SYNC_URL || syncInProgress) {
+    return null;
+  }
+
+  syncInProgress = true;
+  let targetResult: Awaited<ReturnType<typeof syncMeetingToRemote>> | null = null;
+  try {
+    const meetingIds = targetMeetingId ? [targetMeetingId] : db.getPendingMeetingIds();
+    for (const meetingId of meetingIds) {
+      try {
+        const result = await syncMeetingToRemote(db, meetingId);
+        db.markMeetingSyncSucceeded(meetingId);
+        if (meetingId === targetMeetingId) targetResult = result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Live meeting sync failed.";
+        db.markMeetingSyncFailed(meetingId, message);
+        if (meetingId === targetMeetingId) throw error;
+      }
+    }
+    return targetResult;
+  } finally {
+    syncInProgress = false;
+  }
+}
+
 const server = http.createServer(async (request, response) => {
   if (!request.url || !request.method) {
     sendJson(response, 400, { error: "Invalid request" });
@@ -44,11 +85,17 @@ const server = http.createServer(async (request, response) => {
       port,
       dataDir: DATA_DIR,
       dbPath: DB_PATH,
+      liveSyncConfigured: Boolean(SYNC_URL),
+      pendingSyncCount: db.getPendingMeetingIds().length,
     });
     return;
   }
 
   if (request.method === "POST" && request.url === "/imports/meeting") {
+    if (!isAuthorized(request)) {
+      sendJson(response, 401, { error: "Unauthorized" });
+      return;
+    }
     try {
       const payload = await readJson<MeetingPayload>(request);
       if (!payload.meetingId || !payload.sourceUrl || !Array.isArray(payload.items)) {
@@ -67,6 +114,10 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && request.url === "/imports/start") {
+    if (!isAuthorized(request)) {
+      sendJson(response, 401, { error: "Unauthorized" });
+      return;
+    }
     try {
       const payload = await readJson<MeetingHeaderPayload>(request);
       if (!payload.meetingId || !payload.sourceUrl) {
@@ -85,6 +136,10 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && request.url === "/imports/item") {
+    if (!isAuthorized(request)) {
+      sendJson(response, 401, { error: "Unauthorized" });
+      return;
+    }
     try {
       const payload = await readJson<MeetingItemPayload>(request);
       if (!payload.meetingId || !payload.sourceUrl || !payload.item?.itemId) {
@@ -103,6 +158,10 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && request.url === "/imports/finish") {
+    if (!isAuthorized(request)) {
+      sendJson(response, 401, { error: "Unauthorized" });
+      return;
+    }
     try {
       const payload = await readJson<FinishMeetingPayload>(request);
       if (!payload.meetingId || !payload.sourceUrl) {
@@ -111,7 +170,24 @@ const server = http.createServer(async (request, response) => {
       }
 
       const result = db.finishMeeting(payload);
-      sendJson(response, 200, { ok: true, ...result });
+      if (!SYNC_URL) {
+        sendJson(response, 200, { ok: true, ...result, liveSyncConfigured: false, synced: false });
+        return;
+      }
+
+      db.queueMeetingSync(payload.meetingId);
+      try {
+        const syncResult = await syncQueuedMeetings(payload.meetingId);
+        sendJson(response, 200, { ok: true, ...result, ...syncResult });
+      } catch (syncError) {
+        sendJson(response, 200, {
+          ok: true,
+          ...result,
+          liveSyncConfigured: true,
+          synced: false,
+          syncError: syncError instanceof Error ? syncError.message : "Live meeting sync failed.",
+        });
+      }
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -129,4 +205,13 @@ server.listen(port, host, () => {
   db.backfillOpenAIIndex().catch((error) => {
     console.error("OpenAI backfill failed:", error);
   });
+  syncQueuedMeetings().catch((error) => {
+    console.error("Pending live meeting sync failed:", error);
+  });
 });
+
+setInterval(() => {
+  syncQueuedMeetings().catch((error) => {
+    console.error("Scheduled live meeting sync failed:", error);
+  });
+}, 60_000).unref();

@@ -1,0 +1,11 @@
+.git
+.next
+node_modules
+node_modules 2
+.env*
+*.sqlite*
+FutureReadyData
+build
+coverage
+ios
+npm-debug.log*

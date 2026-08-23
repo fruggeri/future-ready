@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "FutureReady Simbli Importer",
-  "version": "0.1.0",
-  "description": "Import Simbli meeting agendas into a local FutureReady database.",
+  "version": "0.2.0",
+  "description": "Import Simbli meetings locally and sync them to the live FutureReady board app.",
   "permissions": ["activeTab", "storage"],
   "host_permissions": ["https://simbli.eboardsolutions.com/*", "http://127.0.0.1/*"],
   "background": {

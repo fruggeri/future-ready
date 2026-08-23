@@ -1,5 +1,23 @@
 # Hostinger VPS Deployment
 
+## Current board archive deployment
+
+The SQL-backed board briefing desk runs at:
+
+```text
+https://board-briefing.187.77.12.18.sslip.io/board
+```
+
+Deploy it from the repository root with:
+
+```bash
+docker compose --env-file .env -f deploy/docker-compose.hostinger.yml up -d --build
+```
+
+Both containers mount `/var/www/future-ready-data`. The web container opens the SQLite database read-only; the helper container owns imports and attachment writes. Traefik publishes the helper under `/helper` and strips that prefix before forwarding requests.
+
+The hosted helper requires `FUTUREREADY_IMPORT_TOKEN`. The compose file derives it from `JWT_SECRET`; the local helper uses that same secret when syncing.
+
 This app has two services:
 
 - `board-web`

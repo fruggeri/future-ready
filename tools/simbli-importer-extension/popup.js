@@ -45,8 +45,18 @@ buttonEl.addEventListener("click", async () => {
         : "";
 
     setStatus(
-      `Imported ${helperStatus.itemCount} agenda items and ${helperStatus.attachmentCount} attachments.\nDatabase: ${helperStatus.dbPath ?? "local SQLite"}${warningSummary}`,
+      `Saved locally: ${helperStatus.itemCount} agenda items and ${helperStatus.attachmentCount} attachments.\nDatabase: ${helperStatus.dbPath ?? "local SQLite"}\n${
+        helperStatus.synced
+          ? "Synced to the live app. Opening the meeting now."
+          : helperStatus.liveSyncConfigured
+            ? `Live sync is queued for retry${helperStatus.syncError ? `: ${helperStatus.syncError}` : "."}`
+            : "Live sync is not configured."
+      }${warningSummary}`,
     );
+
+    if (helperStatus.synced && helperStatus.liveMeetingUrl) {
+      await chrome.tabs.create({ url: helperStatus.liveMeetingUrl });
+    }
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "Import failed.");
   } finally {

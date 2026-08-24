@@ -2,8 +2,9 @@ import "dotenv/config";
 import http from "node:http";
 import crypto from "node:crypto";
 
-import { DEFAULT_HOST, DEFAULT_PORT, DB_PATH, DATA_DIR, IMPORT_TOKEN, SYNC_URL } from "./config";
+import { DEFAULT_HOST, DEFAULT_PORT, DB_PATH, DATA_DIR, IMPORT_TOKEN, IOS_ARCHIVE_PATH, SYNC_URL } from "./config";
 import { ImporterDatabase } from "./database";
+import { publishIOSArchive } from "./ios-archive";
 import { syncMeetingToRemote } from "./sync";
 import type { FinishMeetingPayload, MeetingHeaderPayload, MeetingItemPayload, MeetingPayload } from "./types";
 
@@ -87,6 +88,7 @@ const server = http.createServer(async (request, response) => {
       dbPath: DB_PATH,
       liveSyncConfigured: Boolean(SYNC_URL),
       pendingSyncCount: db.getPendingMeetingIds().length,
+      iosArchiveConfigured: Boolean(IOS_ARCHIVE_PATH),
     });
     return;
   }
@@ -170,15 +172,16 @@ const server = http.createServer(async (request, response) => {
       }
 
       const result = db.finishMeeting(payload);
+      const iosArchive = publishIOSArchive(db, [payload.meetingId]);
       if (!SYNC_URL) {
-        sendJson(response, 200, { ok: true, ...result, liveSyncConfigured: false, synced: false });
+        sendJson(response, 200, { ok: true, ...result, iosArchive, liveSyncConfigured: false, synced: false });
         return;
       }
 
       db.queueMeetingSync(payload.meetingId);
       try {
         const syncResult = await syncQueuedMeetings(payload.meetingId);
-        sendJson(response, 200, { ok: true, ...result, ...syncResult });
+        sendJson(response, 200, { ok: true, ...result, iosArchive, ...syncResult });
       } catch (syncError) {
         sendJson(response, 200, {
           ok: true,
@@ -202,6 +205,14 @@ const server = http.createServer(async (request, response) => {
 server.listen(port, host, () => {
   console.log(`FutureReady importer helper listening on http://${host}:${port}`);
   console.log(`Writing data to ${DATA_DIR}`);
+  if (IOS_ARCHIVE_PATH) {
+    try {
+      const result = publishIOSArchive(db);
+      console.log(`Published ${result?.meetingCount ?? 0} meetings to the iOS archive.`);
+    } catch (error) {
+      console.error("Initial iOS archive publish failed:", error);
+    }
+  }
   db.backfillOpenAIIndex().catch((error) => {
     console.error("OpenAI backfill failed:", error);
   });

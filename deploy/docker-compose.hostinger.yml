@@ -47,8 +47,10 @@ services:
       FUTUREREADY_IMPORT_TOKEN: ${JWT_SECRET}
       FUTUREREADY_SYNC_URL: ""
       FUTUREREADY_LIVE_APP_URL: ""
+      FUTUREREADY_IOS_ARCHIVE_PATH: /ios-archive/meetings.json
     volumes:
       - /var/www/future-ready-data:/data
+      - /var/www/board-meetings:/ios-archive
     networks:
       - coolify
     labels:

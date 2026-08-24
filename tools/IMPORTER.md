@@ -47,6 +47,8 @@ FUTUREREADY_LIVE_APP_URL=https://board-briefing.187.77.12.18.sslip.io
 
 The sync request uses `FUTUREREADY_SYNC_TOKEN`, falling back to `JWT_SECRET`. The hosted helper requires `FUTUREREADY_IMPORT_TOKEN` and must use the same secret.
 
+The hosted helper also merges each completed SQL import into the iPhone app's existing `meetings.json` feed. The iOS archive is written atomically at the path configured by `FUTUREREADY_IOS_ARCHIVE_PATH`, so installed TestFlight builds receive new meetings when the user taps Refresh.
+
 9. Click the FutureReady importer extension icon.
 10. Click `Import This Meeting`.
 11. After a successful live sync, the extension opens the imported meeting in the live board app.

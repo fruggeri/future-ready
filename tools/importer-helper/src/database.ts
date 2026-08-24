@@ -575,7 +575,7 @@ export class ImporterDatabase {
     return attachmentArtifacts;
   }
 
-  getMeetingPayload(meetingId: string): MeetingPayload {
+  getMeetingPayload(meetingId: string, includeAttachmentData = true): MeetingPayload {
     const meeting = this.db
       .prepare(
         `
@@ -642,7 +642,7 @@ export class ImporterDatabase {
 
     const attachmentsByItem = new Map<string, AgendaItemPayload["supportingDocuments"]>();
     for (const attachment of attachmentRows) {
-      if (!fs.existsSync(attachment.local_path)) {
+      if (includeAttachmentData && !fs.existsSync(attachment.local_path)) {
         throw new Error(`Local attachment is missing: ${attachment.file_name}`);
       }
 
@@ -654,7 +654,7 @@ export class ImporterDatabase {
         mimeType: attachment.mime_type,
         sizeBytes: attachment.size_bytes,
         sha256: attachment.sha256,
-        base64Data: fs.readFileSync(attachment.local_path).toString("base64"),
+        base64Data: includeAttachmentData ? fs.readFileSync(attachment.local_path).toString("base64") : "",
       });
       attachmentsByItem.set(attachment.item_id, current);
     }
@@ -679,6 +679,20 @@ export class ImporterDatabase {
         supportingDocuments: attachmentsByItem.get(item.item_id) ?? [],
       })),
     };
+  }
+
+  getMeetingIds() {
+    return (
+      this.db
+        .prepare(
+          `
+          SELECT meeting_id
+          FROM meetings
+          ORDER BY last_imported_at ASC, meeting_id ASC
+        `,
+        )
+        .all() as Array<{ meeting_id: string }>
+    ).map((row) => row.meeting_id);
   }
 
   queueMeetingSync(meetingId: string) {

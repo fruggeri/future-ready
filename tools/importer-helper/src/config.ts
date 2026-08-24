@@ -22,3 +22,4 @@ export const SYNC_TOKEN =
   "";
 export const LIVE_APP_URL = normalizedUrl(process.env.FUTUREREADY_LIVE_APP_URL);
 export const IMPORT_TOKEN = process.env.FUTUREREADY_IMPORT_TOKEN?.trim() || "";
+export const IOS_ARCHIVE_PATH = process.env.FUTUREREADY_IOS_ARCHIVE_PATH?.trim() || "";

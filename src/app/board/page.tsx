@@ -1,6 +1,11 @@
 import { BoardDashboard } from "./BoardDashboard";
 import { getImportedMeetingDetail, getImportedMeetings } from "@/lib/importer-data";
 
+export const metadata = {
+  title: "Board Briefing Desk",
+  description: "Miller Creek School District board meeting briefing desk.",
+};
+
 type BoardPageProps = {
   searchParams: Promise<{
     meetingId?: string;

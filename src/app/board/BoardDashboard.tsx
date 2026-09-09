@@ -10,7 +10,6 @@ import {
   FileStack,
   FolderOpen,
   LayoutPanelLeft,
-  MessageSquareText,
   Search,
   Sparkles,
 } from "lucide-react";
@@ -34,12 +33,6 @@ type SearchResult = {
   localPath?: string;
   sourceUrl?: string;
   score: number;
-};
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-  citations?: SearchResult[];
 };
 
 function formatDateLabel(value: string | null) {
@@ -97,11 +90,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const [chatScope, setChatScope] = useState<"current" | "all">("current");
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [activeWorkspace, setActiveWorkspace] = useState<"search" | "chat" | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     setSelectedMeetingId(initialMeeting?.meetingId ?? meetings[0]?.meetingId ?? "");
@@ -173,52 +162,6 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
     }
   }
 
-  async function sendChatMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const message = chatInput.trim();
-    if (!message) return;
-
-    const nextMessages: ChatMessage[] = [...chatMessages, { role: "user", content: message }];
-    setChatMessages(nextMessages);
-    setChatInput("");
-    setChatLoading(true);
-
-    try {
-      const response = await fetch("/api/board/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          meetingId: chatScope === "current" ? selectedMeetingId || undefined : undefined,
-          history: nextMessages.slice(-6).map((entry) => ({
-            role: entry.role,
-            content: entry.content,
-          })),
-        }),
-      });
-      const raw = await response.text();
-      const data = raw ? JSON.parse(raw) : {};
-      if (!response.ok) {
-        throw new Error(data.error ?? "Chat request failed.");
-      }
-      setChatMessages((current) => [
-        ...current,
-        { role: "assistant", content: data.answer ?? "I could not generate an answer.", citations: data.citations ?? [] },
-      ]);
-    } catch (error) {
-      setChatMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: error instanceof Error ? error.message : "Chat request failed.",
-          citations: [],
-        },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
-  }
-
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f4f8ff_0%,#eef4fb_42%,#f7faf8_100%)] pb-8">
       <main className="mx-auto flex w-full max-w-[1800px] flex-col gap-6 px-3 py-4 sm:px-5 lg:px-6">
@@ -234,7 +177,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
                   Miller Creek School District board meeting briefing desk
                 </h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-white/78 sm:text-base">
-                  Review agendas, supporting files, and meeting context in one place, with retrieval tools designed for fast trustee prep across individual meetings or the full archive.
+                Review agendas and supporting files in one place, with fast search across the full meeting archive.
                 </p>
               </div>
             </div>
@@ -261,15 +204,15 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Archive Workspace</p>
               <p className="mt-1 text-sm text-slate-600">
-                Open either search or archive chat above the agenda workspace.
+                Search the current meeting or the full archive.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setActiveWorkspace((current) => (current === "search" ? null : "search"))}
+                onClick={() => setSearchOpen((current) => !current)}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                  activeWorkspace === "search"
+                  searchOpen
                     ? "bg-slate-900 text-white"
                     : "border border-slate-200 bg-slate-50 text-slate-700"
                 }`}
@@ -277,22 +220,10 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
                 <FileSearch className="h-4 w-4" />
                 Search Archive
               </button>
-              <button
-                type="button"
-                onClick={() => setActiveWorkspace((current) => (current === "chat" ? null : "chat"))}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                  activeWorkspace === "chat"
-                    ? "bg-emerald-600 text-white"
-                    : "border border-slate-200 bg-slate-50 text-slate-700"
-                }`}
-              >
-                <MessageSquareText className="h-4 w-4" />
-                Ask The Archive
-              </button>
             </div>
           </div>
 
-          {activeWorkspace === "search" ? (
+          {searchOpen ? (
             <section className="mt-5 rounded-[24px] border border-sky-200 bg-[linear-gradient(180deg,#f7fbff_0%,#ffffff_100%)] p-5">
               <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <FileSearch className="h-4 w-4 text-sky-600" />
@@ -335,51 +266,6 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
             </section>
           ) : null}
 
-          {activeWorkspace === "chat" ? (
-            <section className="mt-5 rounded-[24px] border border-emerald-200 bg-[linear-gradient(180deg,#f6fffb_0%,#ffffff_100%)] p-5">
-              <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <MessageSquareText className="h-4 w-4 text-emerald-600" />
-                Ask The Archive
-              </div>
-              <div className="mb-3 flex gap-2">
-                <button type="button" onClick={() => setChatScope("current")} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${chatScope === "current" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>This meeting</button>
-                <button type="button" onClick={() => setChatScope("all")} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${chatScope === "all" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>All meetings</button>
-              </div>
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-3">
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Conversation</div>
-                <div className="max-h-[360px] min-w-0 space-y-4 overflow-y-auto pr-1">
-                  {chatMessages.length > 0 ? (
-                    chatMessages.map((message, index) => (
-                      <div key={`${message.role}-${index}`} className={`rounded-3xl px-4 py-3 ${message.role === "user" ? "ml-8 bg-slate-900 text-white" : "mr-8 border border-slate-200 bg-white text-slate-800"}`}>
-                        <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
-                        {message.role === "assistant" && message.citations && message.citations.length > 0 ? (
-                          <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
-                            {message.citations.slice(0, 3).map((citation, citationIndex) => (
-                              <button key={`${citation.kind}-${citationIndex}-${citation.itemId}`} type="button" onClick={() => openResult(citation)} className="block w-full rounded-2xl bg-slate-50 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-100">
-                                <span className="font-semibold text-slate-800">{citation.kind === "attachment" ? citation.fileName : citation.title}</span>
-                                <span className="ml-1">· {citation.itemTitle}</span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No chat yet.</div>
-                  )}
-                </div>
-              </div>
-              <form onSubmit={sendChatMessage} className="mt-4 flex flex-col gap-3 lg:flex-row">
-                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <MessageSquareText className="h-4 w-4 text-slate-400" />
-                  <input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ask about contracts, votes, finances, or attachments" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
-                </label>
-                <button type="submit" className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50" disabled={chatLoading}>
-                  {chatLoading ? "Thinking..." : "Ask"}
-                </button>
-              </form>
-            </section>
-          ) : null}
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[290px_330px_minmax(0,1fr)]">
@@ -393,7 +279,6 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
                 type="button"
                 onClick={() => {
                   setSearchScope("all");
-                  setChatScope("all");
                 }}
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700"
               >

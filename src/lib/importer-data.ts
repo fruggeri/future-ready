@@ -154,7 +154,8 @@ export function getImportedMeetings(): ImportedMeeting[] {
       itemCount: row.item_count,
       attachmentCount: row.attachment_count,
     }))
-    .sort((left, right) => parseMeetingDateLabel(right.meetingDateLabel) - parseMeetingDateLabel(left.meetingDateLabel));
+    .sort((left, right) => parseMeetingDateLabel(right.meetingDateLabel) - parseMeetingDateLabel(left.meetingDateLabel))
+    .slice(0, 52);
 }
 
 export function getImportedMeetingDetail(meetingId: string): ImportedMeetingDetail | null {

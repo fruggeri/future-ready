@@ -364,34 +364,3 @@ export function searchBoardArchive(query: string, meetingId?: string, limit = 6)
     snippet: createSnippet(hit.snippet, query),
   }));
 }
-
-export function buildBoardChatContext(query: string, meetingId?: string) {
-  let hits = searchBoardArchive(query, meetingId, 5);
-
-  if (hits.length === 0) {
-    const keywordTokens = buildKeywordTokens(query);
-    if (keywordTokens.length > 0) {
-      hits = searchBoardArchiveByKeywords(keywordTokens, meetingId, 8);
-      if (hits.length === 0) {
-        hits = searchBoardArchiveByLikeTerms(keywordTokens, meetingId, 8);
-      }
-    }
-  }
-
-  const countPrefix =
-    /\bhow many\b/i.test(query) && hits.length > 0
-      ? `Matching records found: ${hits.length}.\n\n`
-      : "";
-
-  const context = hits
-    .map((hit, index) => {
-      if (hit.kind === "attachment") {
-        return `[${index + 1}] Attachment: ${hit.fileName}\nAgenda Item: ${hit.itemTitle}\nExcerpt: ${hit.snippet}`;
-      }
-
-      return `[${index + 1}] Agenda Item: ${hit.title}\nExcerpt: ${hit.snippet}`;
-    })
-    .join("\n\n");
-
-  return { hits, context: `${countPrefix}${context}` };
-}

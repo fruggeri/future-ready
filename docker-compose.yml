@@ -9,7 +9,7 @@ services:
       FUTUREREADY_DATA_DIR: /data
       FUTUREREADY_DATA_DB: /data/futureready.sqlite
     volumes:
-      - /root/FutureReadyData:/data
+      - /var/www/future-ready-data:/data
     networks:
       - coolify
     labels:
@@ -43,7 +43,7 @@ services:
       FUTUREREADY_LIVE_APP_URL: ""
       FUTUREREADY_IOS_ARCHIVE_PATH: /ios-archive/meetings.json
     volumes:
-      - /root/FutureReadyData:/data
+      - /var/www/future-ready-data:/data
       - /var/www/board-meetings:/ios-archive
     networks:
       - coolify

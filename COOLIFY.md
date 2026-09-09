@@ -14,10 +14,10 @@ This repository contains the Miller Creek School District board briefing desk an
 
 The compose file retains the existing host directories:
 
-- `/var/www/future-ready-data` stores `futureready.sqlite`, downloaded attachments, and import logs.
+- `/var/www/board-briefing-desk/data` stores `futureready.sqlite`, downloaded attachments, and import logs.
 - `/var/www/board-meetings` stores the optional iOS archive feed.
 
-Do not remove either directory during the migration. If the current archive is elsewhere, copy it into `/var/www/future-ready-data` before the first Coolify deployment.
+Do not remove either directory during the migration. If the current archive is elsewhere, copy it into `/var/www/board-briefing-desk/data` before the first Coolify deployment.
 
 ## After deployment
 

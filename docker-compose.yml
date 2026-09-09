@@ -1,0 +1,67 @@
+services:
+  web:
+    image: future-ready:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      FUTUREREADY_DATA_DIR: /data
+      FUTUREREADY_DATA_DB: /data/futureready.sqlite
+    volumes:
+      - /var/www/board-briefing-desk/data:/data
+    networks:
+      - coolify
+    labels:
+      traefik.enable: "true"
+      traefik.http.middlewares.future-ready-gzip.compress: "true"
+      traefik.http.middlewares.future-ready-redirect.redirectscheme.scheme: https
+      traefik.http.routers.future-ready-web-http.entrypoints: http
+      traefik.http.routers.future-ready-web-http.rule: Host(`board-briefing.187.77.12.18.sslip.io`)
+      traefik.http.routers.future-ready-web-http.middlewares: future-ready-redirect
+      traefik.http.routers.future-ready-web-https.entrypoints: https
+      traefik.http.routers.future-ready-web-https.rule: Host(`board-briefing.187.77.12.18.sslip.io`)
+      traefik.http.routers.future-ready-web-https.middlewares: future-ready-gzip
+      traefik.http.routers.future-ready-web-https.tls: "true"
+      traefik.http.routers.future-ready-web-https.tls.certresolver: letsencrypt
+      traefik.http.services.future-ready-web.loadbalancer.server.port: "3000"
+
+  helper:
+    image: future-ready:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["npm", "run", "importer:helper"]
+    environment:
+      FUTUREREADY_DATA_DIR: /data
+      FUTUREREADY_DATA_DB: /data/futureready.sqlite
+      FUTUREREADY_HELPER_HOST: 0.0.0.0
+      FUTUREREADY_HELPER_PORT: "4318"
+      FUTUREREADY_IMPORT_TOKEN: ""
+      FUTUREREADY_SYNC_URL: ""
+      FUTUREREADY_LIVE_APP_URL: ""
+      FUTUREREADY_IOS_ARCHIVE_PATH: /ios-archive/meetings.json
+    volumes:
+      - /var/www/board-briefing-desk/data:/data
+      - /var/www/board-meetings:/ios-archive
+    networks:
+      - coolify
+    labels:
+      traefik.enable: "true"
+      traefik.http.middlewares.future-ready-helper-strip.stripprefix.prefixes: /helper
+      traefik.http.routers.future-ready-helper-http.entrypoints: http
+      traefik.http.routers.future-ready-helper-http.rule: Host(`board-briefing.187.77.12.18.sslip.io`) && PathPrefix(`/helper`)
+      traefik.http.routers.future-ready-helper-http.middlewares: future-ready-redirect
+      traefik.http.routers.future-ready-helper-http.priority: "100"
+      traefik.http.routers.future-ready-helper-https.entrypoints: https
+      traefik.http.routers.future-ready-helper-https.rule: Host(`board-briefing.187.77.12.18.sslip.io`) && PathPrefix(`/helper`)
+      traefik.http.routers.future-ready-helper-https.middlewares: future-ready-helper-strip,future-ready-gzip
+      traefik.http.routers.future-ready-helper-https.priority: "100"
+      traefik.http.routers.future-ready-helper-https.tls: "true"
+      traefik.http.routers.future-ready-helper-https.tls.certresolver: letsencrypt
+      traefik.http.services.future-ready-helper.loadbalancer.server.port: "4318"
+
+networks:
+  coolify:
+    external: true

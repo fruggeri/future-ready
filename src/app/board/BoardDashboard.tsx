@@ -35,6 +35,46 @@ type SearchResult = {
   score: number;
 };
 
+function searchCachedArchive(
+  details: Record<string, ImportedMeetingDetail>,
+  query: string,
+  meetingId: string,
+): SearchResult[] {
+  const needle = query.toLowerCase();
+  return Object.values(details)
+    .filter((detail) => !meetingId || detail.meetingId === meetingId)
+    .flatMap((detail) => detail.items.flatMap((item) => {
+      const results: SearchResult[] = [];
+      const agendaText = `${item.title}\n${item.plainText}`;
+      if (agendaText.toLowerCase().includes(needle)) {
+        results.push({
+          kind: "agenda",
+          meetingId: detail.meetingId,
+          itemId: item.itemId,
+          title: item.title,
+          itemTitle: item.title,
+          snippet: item.plainText.slice(0, 260),
+          score: 1,
+        });
+      }
+      for (const attachment of item.attachments) {
+        if (`${attachment.fileName}\n${attachment.extractedText}`.toLowerCase().includes(needle)) {
+          results.push({
+            kind: "attachment",
+            meetingId: detail.meetingId,
+            itemId: item.itemId,
+            title: item.title,
+            itemTitle: item.title,
+            snippet: attachment.extractedText.slice(0, 260),
+            fileName: attachment.fileName,
+            score: 1,
+          });
+        }
+      }
+      return results;
+    }));
+}
+
 function formatDateLabel(value: string | null) {
   if (!value) return "Date unavailable";
   const match = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -217,8 +257,18 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
       }
       setSearchResults(data.results ?? []);
     } catch (error) {
-      setSearchResults([]);
-      setSearchError(error instanceof Error ? error.message : "Search failed.");
+      const cachedResults = searchCachedArchive(
+        meetingDetails,
+        normalizedQuery,
+        searchScope === "current" ? selectedMeetingId : "",
+      );
+      if (cachedResults.length > 0) {
+        setSearchResults(cachedResults);
+        setSearchError("");
+      } else {
+        setSearchResults([]);
+        setSearchError(error instanceof Error ? error.message : "Search failed.");
+      }
     } finally {
       setSearchLoading(false);
     }

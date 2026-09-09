@@ -39,6 +39,7 @@ type AttachmentRow = {
   size_bytes: number;
   sha256: string;
   downloaded_at: string;
+  extracted_text: string | null;
 };
 
 export type ImportedAttachment = {
@@ -51,6 +52,7 @@ export type ImportedAttachment = {
   mimeType: string;
   sizeBytes: number;
   downloadedAt: string;
+  extractedText: string;
 };
 
 export type ImportedAgendaItem = {
@@ -202,9 +204,10 @@ export function getImportedMeetingDetail(meetingId: string): ImportedMeetingDeta
   const attachmentRows = db
     .prepare(
       `
-      SELECT attachment_key, attachment_id, item_id, meeting_id, file_name, source_url, local_path, mime_type, size_bytes, sha256, downloaded_at
-      FROM attachments
-      WHERE meeting_id = ?
+      SELECT at.attachment_key, at.attachment_id, at.item_id, at.meeting_id, at.file_name, at.source_url, at.local_path, at.mime_type, at.size_bytes, at.sha256, at.downloaded_at, ac.extracted_text
+      FROM attachments at
+      LEFT JOIN attachment_content ac ON ac.attachment_key = at.attachment_key
+      WHERE at.meeting_id = ?
       ORDER BY downloaded_at DESC, file_name ASC
     `,
     )
@@ -225,6 +228,7 @@ export function getImportedMeetingDetail(meetingId: string): ImportedMeetingDeta
       mimeType: row.mime_type,
       sizeBytes: row.size_bytes,
       downloadedAt: row.downloaded_at,
+      extractedText: row.extracted_text ?? "",
     });
     attachmentsByItem.set(row.item_id, current);
   }

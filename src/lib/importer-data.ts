@@ -208,7 +208,7 @@ export function getImportedMeetingDetail(meetingId: string): ImportedMeetingDeta
       FROM attachments at
       LEFT JOIN attachment_content ac ON ac.attachment_key = at.attachment_key
       WHERE at.meeting_id = ?
-      ORDER BY downloaded_at DESC, file_name ASC
+      ORDER BY at.downloaded_at DESC, at.file_name ASC
     `,
     )
     .all(meetingId) as AttachmentRow[];

@@ -213,9 +213,6 @@ server.listen(port, host, () => {
       console.error("Initial iOS archive publish failed:", error);
     }
   }
-  db.backfillOpenAIIndex().catch((error) => {
-    console.error("OpenAI backfill failed:", error);
-  });
   syncQueuedMeetings().catch((error) => {
     console.error("Pending live meeting sync failed:", error);
   });

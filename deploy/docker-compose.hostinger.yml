@@ -4,10 +4,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: future-ready-web
     restart: unless-stopped
-    env_file:
-      - ../.env
     environment:
       FUTUREREADY_DATA_DIR: /data
       FUTUREREADY_DATA_DB: /data/futureready.sqlite
@@ -34,17 +31,15 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: future-ready-helper
     restart: unless-stopped
     command: ["npm", "run", "importer:helper"]
-    env_file:
-      - ../.env
     environment:
       FUTUREREADY_DATA_DIR: /data
       FUTUREREADY_DATA_DB: /data/futureready.sqlite
       FUTUREREADY_HELPER_HOST: 0.0.0.0
       FUTUREREADY_HELPER_PORT: "4318"
-      FUTUREREADY_IMPORT_TOKEN: ${JWT_SECRET}
+      # Leave empty unless the browser extension is configured with the same token.
+      FUTUREREADY_IMPORT_TOKEN: ""
       FUTUREREADY_SYNC_URL: ""
       FUTUREREADY_LIVE_APP_URL: ""
       FUTUREREADY_IOS_ARCHIVE_PATH: /ios-archive/meetings.json

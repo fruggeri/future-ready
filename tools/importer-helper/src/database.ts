@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import OpenAI from "openai";
 
 import { extractAttachmentText } from "./attachment-text";
 import { ATTACHMENTS_DIR, DB_PATH, LOGS_DIR } from "./config";
@@ -19,17 +18,12 @@ function safeSegment(value: string) {
 
 export class ImporterDatabase {
   private db: Database.Database;
-  private openai: OpenAI | null;
 
   constructor() {
     ensureDirectories();
     this.db = new Database(DB_PATH);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
-    this.openai =
-      process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== "missing"
-        ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-        : null;
     this.initialize();
   }
 
@@ -99,29 +93,6 @@ export class ImporterDatabase {
       CREATE INDEX IF NOT EXISTS idx_agenda_items_meeting_id ON agenda_items(meeting_id);
       CREATE INDEX IF NOT EXISTS idx_attachments_item_id ON attachments(item_id);
       CREATE INDEX IF NOT EXISTS idx_attachment_content_item_id ON attachment_content(item_id);
-
-      CREATE TABLE IF NOT EXISTS archive_settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS attachment_ai_index (
-        attachment_key TEXT PRIMARY KEY,
-        meeting_id TEXT NOT NULL,
-        item_id TEXT NOT NULL,
-        file_name TEXT NOT NULL,
-        local_path TEXT NOT NULL,
-        sha256 TEXT NOT NULL,
-        vector_store_id TEXT,
-        vector_store_file_id TEXT,
-        status TEXT NOT NULL,
-        last_error TEXT,
-        indexed_at TEXT,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_attachment_ai_index_meeting_id ON attachment_ai_index(meeting_id);
 
       CREATE TABLE IF NOT EXISTS meeting_sync_status (
         meeting_id TEXT PRIMARY KEY,
@@ -253,272 +224,6 @@ export class ImporterDatabase {
         FROM attachment_content;
       `);
     }
-  }
-
-  private getSetting(key: string) {
-    const row = this.db
-      .prepare("SELECT value FROM archive_settings WHERE key = ?")
-      .get(key) as { value: string } | undefined;
-    return row?.value ?? null;
-  }
-
-  private setSetting(key: string, value: string) {
-    this.db
-      .prepare(
-        `
-        INSERT INTO archive_settings (key, value, updated_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at = excluded.updated_at
-      `,
-      )
-      .run(key, value, new Date().toISOString());
-  }
-
-  private async ensureVectorStoreId() {
-    if (!this.openai) {
-      return null;
-    }
-
-    const existing = this.getSetting("openai_vector_store_id");
-    if (existing) {
-      return existing;
-    }
-
-    const vectorStore = await this.openai.vectorStores.create({
-      name: "Miller Creek Board Archive",
-      metadata: {
-        app: "board-briefing-desk",
-      },
-    });
-
-    this.setSetting("openai_vector_store_id", vectorStore.id);
-    return vectorStore.id;
-  }
-
-  private async syncAttachmentToOpenAI(artifact: {
-    attachmentKey: string;
-    attachmentId: string;
-    itemId: string;
-    meetingId: string;
-    fileName: string;
-    localPath: string;
-    sha256: string;
-  }) {
-    const updatedAt = new Date().toISOString();
-
-    if (!this.openai) {
-      this.db
-        .prepare(
-          `
-          INSERT INTO attachment_ai_index (
-            attachment_key, meeting_id, item_id, file_name, local_path, sha256, status, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(attachment_key) DO UPDATE SET
-            meeting_id = excluded.meeting_id,
-            item_id = excluded.item_id,
-            file_name = excluded.file_name,
-            local_path = excluded.local_path,
-            sha256 = excluded.sha256,
-            status = excluded.status,
-            updated_at = excluded.updated_at
-        `,
-        )
-        .run(
-          artifact.attachmentKey,
-          artifact.meetingId,
-          artifact.itemId,
-          artifact.fileName,
-          artifact.localPath,
-          artifact.sha256,
-          "disabled",
-          updatedAt,
-        );
-      return;
-    }
-
-    const existing = this.db
-      .prepare(
-        `
-        SELECT sha256, status, vector_store_id, vector_store_file_id
-        FROM attachment_ai_index
-        WHERE attachment_key = ?
-      `,
-      )
-      .get(artifact.attachmentKey) as
-      | {
-          sha256: string;
-          status: string;
-          vector_store_id: string | null;
-          vector_store_file_id: string | null;
-        }
-      | undefined;
-
-    if (existing && existing.sha256 === artifact.sha256 && existing.status === "completed") {
-      return;
-    }
-
-    const vectorStoreId = await this.ensureVectorStoreId();
-    if (!vectorStoreId) {
-      return;
-    }
-
-    try {
-      const uploaded = await this.openai.vectorStores.files.uploadAndPoll(
-        vectorStoreId,
-        fs.createReadStream(artifact.localPath),
-      );
-
-      await this.openai.vectorStores.files.update(uploaded.id, {
-        vector_store_id: vectorStoreId,
-        attributes: {
-          attachment_key: artifact.attachmentKey,
-          attachment_id: artifact.attachmentId,
-          meeting_id: artifact.meetingId,
-          item_id: artifact.itemId,
-          file_name: artifact.fileName,
-        },
-      });
-
-      this.db
-        .prepare(
-          `
-          INSERT INTO attachment_ai_index (
-            attachment_key, meeting_id, item_id, file_name, local_path, sha256, vector_store_id, vector_store_file_id, status, last_error, indexed_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(attachment_key) DO UPDATE SET
-            meeting_id = excluded.meeting_id,
-            item_id = excluded.item_id,
-            file_name = excluded.file_name,
-            local_path = excluded.local_path,
-            sha256 = excluded.sha256,
-            vector_store_id = excluded.vector_store_id,
-            vector_store_file_id = excluded.vector_store_file_id,
-            status = excluded.status,
-            last_error = excluded.last_error,
-            indexed_at = excluded.indexed_at,
-            updated_at = excluded.updated_at
-        `,
-        )
-        .run(
-          artifact.attachmentKey,
-          artifact.meetingId,
-          artifact.itemId,
-          artifact.fileName,
-          artifact.localPath,
-          artifact.sha256,
-          vectorStoreId,
-          uploaded.id,
-          uploaded.status,
-          uploaded.last_error?.message ?? null,
-          updatedAt,
-          updatedAt,
-        );
-    } catch (error) {
-      this.db
-        .prepare(
-          `
-          INSERT INTO attachment_ai_index (
-            attachment_key, meeting_id, item_id, file_name, local_path, sha256, vector_store_id, status, last_error, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(attachment_key) DO UPDATE SET
-            meeting_id = excluded.meeting_id,
-            item_id = excluded.item_id,
-            file_name = excluded.file_name,
-            local_path = excluded.local_path,
-            sha256 = excluded.sha256,
-            vector_store_id = excluded.vector_store_id,
-            status = excluded.status,
-            last_error = excluded.last_error,
-            updated_at = excluded.updated_at
-        `,
-        )
-        .run(
-          artifact.attachmentKey,
-          artifact.meetingId,
-          artifact.itemId,
-          artifact.fileName,
-          artifact.localPath,
-          artifact.sha256,
-          vectorStoreId,
-          "failed",
-          error instanceof Error ? error.message : "OpenAI indexing failed.",
-          updatedAt,
-        );
-    }
-  }
-
-  async backfillOpenAIIndex() {
-    const rows = this.db
-      .prepare(
-        `
-        SELECT a.attachment_key, a.attachment_id, a.item_id, a.meeting_id, a.file_name, a.local_path, a.sha256
-        FROM attachments a
-        LEFT JOIN attachment_ai_index ai ON ai.attachment_key = a.attachment_key
-        WHERE ai.attachment_key IS NULL OR ai.sha256 != a.sha256 OR ai.status != 'completed'
-        ORDER BY a.meeting_id DESC
-      `,
-      )
-      .all() as Array<{
-      attachment_key: string;
-      attachment_id: string;
-      item_id: string;
-      meeting_id: string;
-      file_name: string;
-      local_path: string;
-      sha256: string;
-    }>;
-
-    for (const row of rows) {
-      if (!fs.existsSync(row.local_path)) {
-        continue;
-      }
-
-      await this.syncAttachmentToOpenAI({
-        attachmentKey: row.attachment_key,
-        attachmentId: row.attachment_id,
-        itemId: row.item_id,
-        meetingId: row.meeting_id,
-        fileName: row.file_name,
-        localPath: row.local_path,
-        sha256: row.sha256,
-      });
-    }
-  }
-
-  private syncAttachmentsToOpenAIInBackground(
-    artifacts: Array<{
-      attachmentKey: string;
-      attachmentId: string;
-      itemId: string;
-      meetingId: string;
-      fileName: string;
-      localPath: string;
-      sha256: string;
-    }>,
-  ) {
-    if (artifacts.length === 0) {
-      return;
-    }
-
-    setImmediate(() => {
-      Promise.allSettled(
-        artifacts.map((artifact) =>
-          this.syncAttachmentToOpenAI({
-            attachmentKey: artifact.attachmentKey,
-            attachmentId: artifact.attachmentId,
-            itemId: artifact.itemId,
-            meetingId: artifact.meetingId,
-            fileName: artifact.fileName,
-            localPath: artifact.localPath,
-            sha256: artifact.sha256,
-          }),
-        ),
-      ).catch((error) => {
-        console.error("Background OpenAI attachment sync failed:", error);
-      });
-    });
   }
 
   private async buildAttachmentArtifacts(
@@ -771,7 +476,6 @@ export class ImporterDatabase {
         )
         .run(header);
 
-      this.db.prepare("DELETE FROM attachment_ai_index WHERE meeting_id = ?").run(header.meetingId);
       this.db.prepare("DELETE FROM attachments WHERE meeting_id = ?").run(header.meetingId);
       this.db.prepare("DELETE FROM attachment_content WHERE meeting_id = ?").run(header.meetingId);
       this.db.prepare("DELETE FROM agenda_items WHERE meeting_id = ?").run(header.meetingId);
@@ -864,18 +568,6 @@ export class ImporterDatabase {
     });
 
     transaction();
-    this.syncAttachmentsToOpenAIInBackground(
-      attachmentArtifacts.map((artifact) => ({
-        attachmentKey: artifact.attachmentKey,
-        attachmentId: artifact.attachmentId,
-        itemId: artifact.itemId,
-        meetingId: artifact.meetingId,
-        fileName: artifact.fileName,
-        localPath: artifact.localPath,
-        sha256: artifact.sha256,
-      })),
-    );
-
     return {
       itemId: payload.item.itemId,
       attachmentCount: attachmentArtifacts.length,
@@ -1083,17 +775,6 @@ export class ImporterDatabase {
     });
 
     const result = transaction();
-    this.syncAttachmentsToOpenAIInBackground(
-      attachmentArtifacts.map((artifact) => ({
-        attachmentKey: artifact.attachmentKey,
-        attachmentId: artifact.attachmentId,
-        itemId: artifact.itemId,
-        meetingId: artifact.meetingId,
-        fileName: artifact.fileName,
-        localPath: artifact.localPath,
-        sha256: artifact.sha256,
-      })),
-    );
     return result;
   }
 }

@@ -91,13 +91,75 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [meetingDetails, setMeetingDetails] = useState<Record<string, ImportedMeetingDetail>>(
+    initialMeeting ? { [initialMeeting.meetingId]: initialMeeting } : {},
+  );
+  const [offlineStatus, setOfflineStatus] = useState<"starting" | "ready" | "partial">("starting");
 
   useEffect(() => {
     setSelectedMeetingId(initialMeeting?.meetingId ?? meetings[0]?.meetingId ?? "");
     setSelectedItemId(initialItemId ?? initialMeeting?.items[0]?.itemId ?? "");
+    if (initialMeeting) {
+      setMeetingDetails((current) => ({ ...current, [initialMeeting.meetingId]: initialMeeting }));
+    }
   }, [initialMeeting, initialItemId, meetings]);
 
-  const meeting = initialMeeting;
+  useEffect(() => {
+    let cancelled = false;
+
+    async function prepareOfflineArchive() {
+      try {
+        let browserCache: Cache | null = null;
+        if ("serviceWorker" in navigator) {
+          await navigator.serviceWorker.register("/board-sw.js", { scope: "/" });
+          await navigator.serviceWorker.ready;
+          browserCache = await caches.open("board-briefing-desk-v1");
+          const boardResponse = await fetch("/board", { cache: "no-store" });
+          if (boardResponse.ok) await browserCache.put("/board", boardResponse.clone());
+        }
+
+        const response = await fetch("/api/board/archive");
+        if (!response.ok) throw new Error("Archive snapshot unavailable.");
+        if (browserCache) await browserCache.put("/api/board/archive", response.clone());
+        const archive = (await response.json()) as {
+          details: Record<string, ImportedMeetingDetail>;
+        };
+        if (cancelled) return;
+
+        setMeetingDetails(archive.details);
+        setOfflineStatus("partial");
+
+        const attachments = Object.values(archive.details)
+          .flatMap((detail) => detail.items.flatMap((item) => item.attachments))
+          .map((attachment) => attachment.downloadUrl);
+        let nextIndex = 0;
+        async function prefetchBatch() {
+          while (nextIndex < attachments.length) {
+            const url = attachments[nextIndex++];
+            try {
+              const attachmentResponse = await fetch(url);
+              if (browserCache && attachmentResponse.ok) {
+                await browserCache.put(url, attachmentResponse.clone());
+              }
+            } catch {
+              // A single unavailable document should not stop the rest of the archive.
+            }
+          }
+        }
+        await Promise.all([prefetchBatch(), prefetchBatch(), prefetchBatch()]);
+        if (!cancelled) setOfflineStatus("ready");
+      } catch {
+        if (!cancelled) setOfflineStatus("partial");
+      }
+    }
+
+    void prepareOfflineArchive();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const meeting = meetingDetails[selectedMeetingId] ?? initialMeeting;
 
   const visibleItems = useMemo(() => {
     if (!meeting) return [];
@@ -121,7 +183,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
   function selectMeeting(meetingId: string) {
     setSelectedMeetingId(meetingId);
     setSelectedItemId("");
-    router.push(`/board?meetingId=${encodeURIComponent(meetingId)}`);
+    window.history.pushState({}, "", `/board?meetingId=${encodeURIComponent(meetingId)}`);
   }
 
   function openResult(result: SearchResult) {
@@ -171,6 +233,9 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
               <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.24em] text-white/88">
                 <Sparkles className="h-3.5 w-3.5" />
                 Board Briefing Desk
+              </div>
+              <div className="text-xs font-semibold text-white/70">
+                {offlineStatus === "ready" ? "Offline copy ready" : offlineStatus === "partial" ? "Offline copy still preparing" : "Preparing offline copy..."}
               </div>
               <div>
                 <h1 className="max-w-4xl font-serif text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl">
@@ -428,7 +493,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
                               <p className="break-words text-sm font-semibold text-slate-900">{attachment.fileName}</p>
                               <p className="mt-1 text-xs text-slate-500">{attachment.mimeType} · {formatBytes(attachment.sizeBytes)}</p>
                               <div className="mt-3 flex flex-wrap gap-2">
-                                <a href={`file://${attachment.localPath}`} className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">
+                                <a href={attachment.downloadUrl} className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">
                                   <FolderOpen className="h-3.5 w-3.5" />
                                   Open File
                                 </a>

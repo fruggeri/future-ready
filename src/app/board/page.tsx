@@ -4,6 +4,7 @@ import { getImportedMeetingDetail, getImportedMeetings } from "@/lib/importer-da
 export const metadata = {
   title: "Board Briefing Desk",
   description: "Miller Creek School District board meeting briefing desk.",
+  manifest: "/board-manifest.webmanifest",
 };
 
 type BoardPageProps = {

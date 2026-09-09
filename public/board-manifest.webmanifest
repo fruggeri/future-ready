@@ -1,0 +1,9 @@
+{
+  "name": "Miller Creek Board Briefing Desk",
+  "short_name": "Board Briefing",
+  "start_url": "/board",
+  "display": "standalone",
+  "background_color": "#eef4fb",
+  "theme_color": "#13344f",
+  "icons": []
+}

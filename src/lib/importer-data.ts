@@ -47,6 +47,7 @@ export type ImportedAttachment = {
   fileName: string;
   sourceUrl: string;
   localPath: string;
+  downloadUrl: string;
   mimeType: string;
   sizeBytes: number;
   downloadedAt: string;
@@ -220,6 +221,7 @@ export function getImportedMeetingDetail(meetingId: string): ImportedMeetingDeta
       fileName: row.file_name,
       sourceUrl: row.source_url,
       localPath: row.local_path,
+      downloadUrl: `/api/board/attachments/${encodeURIComponent(row.attachment_key)}`,
       mimeType: row.mime_type,
       sizeBytes: row.size_bytes,
       downloadedAt: row.downloaded_at,

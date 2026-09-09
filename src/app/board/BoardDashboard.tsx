@@ -122,7 +122,7 @@ function paragraphsFromText(text: string) {
 
 export function BoardDashboard({ meetings, initialMeeting, initialItemId }: BoardDashboardProps) {
   const router = useRouter();
-  const [selectedMeetingId, setSelectedMeetingId] = useState(initialMeeting?.meetingId ?? meetings[0]?.meetingId ?? "");
+  const [selectedMeetingId, setSelectedMeetingId] = useState(initialMeeting?.meetingId ?? "");
   const [selectedItemId, setSelectedItemId] = useState(initialItemId ?? initialMeeting?.items[0]?.itemId ?? "");
   const [query, setQuery] = useState("");
   const [searchScope, setSearchScope] = useState<"current" | "all">("current");
@@ -137,7 +137,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
   const [offlineStatus, setOfflineStatus] = useState<"starting" | "ready" | "partial">("starting");
 
   useEffect(() => {
-    setSelectedMeetingId(initialMeeting?.meetingId ?? meetings[0]?.meetingId ?? "");
+    setSelectedMeetingId(initialMeeting?.meetingId ?? "");
     setSelectedItemId(initialItemId ?? initialMeeting?.items[0]?.itemId ?? "");
     if (initialMeeting) {
       setMeetingDetails((current) => ({ ...current, [initialMeeting.meetingId]: initialMeeting }));
@@ -297,7 +297,7 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
               <div className="rounded-3xl border border-white/18 bg-white/10 p-4 backdrop-blur-sm">
                 <p className="text-xs uppercase tracking-[0.22em] text-white/65">Meetings</p>
                 <p className="mt-2 text-3xl font-semibold">{meetings.length}</p>
@@ -314,6 +314,8 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
           </div>
         </section>
 
+        {meeting ? (
+          <>
         <section className="rounded-[28px] border border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_50px_rgba(28,48,89,0.08)]">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -383,8 +385,8 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
 
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[290px_330px_minmax(0,1fr)]">
-          <aside className="min-w-0 rounded-[28px] border border-slate-200/70 bg-white/92 p-4 shadow-[0_18px_50px_rgba(28,48,89,0.08)]">
+        <section className="grid gap-5 lg:grid-cols-[minmax(250px,340px)_minmax(0,1fr)]">
+          <aside className="hidden">
             <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700">
               <Database className="h-4 w-4 text-sky-600" />
               Imported Meetings
@@ -474,7 +476,18 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
             </div>
           </aside>
 
-          <section className="min-w-0 rounded-[30px] border border-slate-200/80 bg-white/96 p-5 shadow-[0_22px_60px_rgba(28,48,89,0.1)]">
+          <section className="min-w-0 rounded-[30px] border border-slate-200/80 bg-white/96 p-4 shadow-[0_22px_60px_rgba(28,48,89,0.1)] sm:p-5">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMeetingId("");
+                setSelectedItemId("");
+                window.history.pushState({}, "", "/board");
+              }}
+              className="mb-4 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:text-sky-700"
+            >
+              All meetings
+            </button>
             {!meeting || !selectedItem ? (
               <div className="flex min-h-[500px] items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-slate-50 text-center">
                 <div>
@@ -576,6 +589,38 @@ export function BoardDashboard({ meetings, initialMeeting, initialItemId }: Boar
           </section>
 
         </section>
+          </>
+        ) : (
+          <section className="rounded-[28px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_18px_50px_rgba(28,48,89,0.08)] sm:p-6">
+            <div className="mb-5 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Meeting Archive</p>
+                <h2 className="mt-2 font-serif text-3xl font-semibold tracking-tight text-slate-950">All board meetings</h2>
+              </div>
+              <span className="rounded-full bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700">{meetings.length} meetings</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {meetings.map((entry) => (
+                <button
+                  key={entry.meetingId}
+                  type="button"
+                  onClick={() => selectMeeting(entry.meetingId)}
+                  className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-300"
+                >
+                  <p className="line-clamp-3 text-sm font-semibold leading-5 text-slate-900">{entry.meetingTitle}</p>
+                  <div className="mt-4 flex items-center gap-2 text-xs text-slate-600">
+                    <CalendarDays className="h-3.5 w-3.5 text-sky-600" />
+                    {formatDateLabel(entry.meetingDateLabel)}
+                  </div>
+                  <div className="mt-3 flex justify-between text-xs text-slate-500">
+                    <span>{entry.itemCount} agenda items</span>
+                    <span>{entry.attachmentCount} files</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

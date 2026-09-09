@@ -1,5 +1,6 @@
 import "server-only";
 
+import fs from "node:fs";
 import Database from "better-sqlite3";
 
 import { ARCHIVE_DB_PATH } from "@/lib/archive-config";
@@ -41,6 +42,28 @@ type AttachmentRow = {
   downloaded_at: string;
   extracted_text: string | null;
 };
+
+type SupplementalAgendaItem = {
+  id: string;
+  title: string;
+  level: number;
+  body: string | null;
+  attachments: Array<{ id: string; name: string; url: string }>;
+  children: SupplementalAgendaItem[];
+};
+
+type SupplementalMeeting = {
+  id: string;
+  title: string;
+  date: string;
+  time: string;
+  detailURL: string;
+  agenda: SupplementalAgendaItem[];
+};
+
+type SupplementalArchive = { meetings: SupplementalMeeting[] };
+
+const SUPPLEMENTAL_ARCHIVE_PATH = process.env.FUTUREREADY_IOS_ARCHIVE_PATH ?? "/var/www/board-meetings/meetings.json";
 
 export type ImportedAttachment = {
   attachmentKey: string;
@@ -84,6 +107,77 @@ export type ImportedMeeting = {
 export type ImportedMeetingDetail = ImportedMeeting & {
   items: ImportedAgendaItem[];
 };
+
+function readSupplementalMeetings() {
+  try {
+    if (!fs.existsSync(SUPPLEMENTAL_ARCHIVE_PATH)) return [];
+    const archive = JSON.parse(fs.readFileSync(SUPPLEMENTAL_ARCHIVE_PATH, "utf8")) as SupplementalArchive;
+    return Array.isArray(archive.meetings) ? archive.meetings : [];
+  } catch {
+    return [];
+  }
+}
+
+function supplementalDateLabel(meeting: SupplementalMeeting) {
+  if (!meeting.date) return null;
+  const [year, month, day] = meeting.date.split("-");
+  return `${month}/${day}/${year}${meeting.time ? ` - ${meeting.time}` : ""}`;
+}
+
+function flattenSupplementalAgenda(
+  meeting: SupplementalMeeting,
+  nodes: SupplementalAgendaItem[],
+  parentItemId: string | null,
+  path: string[],
+  output: ImportedAgendaItem[],
+) {
+  for (const node of nodes) {
+    const itemId = `${meeting.id}::${node.id}`;
+    const currentPath = [...path, node.title];
+    output.push({
+      itemId,
+      parentItemId,
+      meetingId: meeting.id,
+      title: node.title,
+      orderIndex: output.length,
+      level: Math.max(0, node.level - 1),
+      path: currentPath,
+      rawHtml: "",
+      plainText: node.body ?? "",
+      updatedAt: new Date().toISOString(),
+      attachments: (node.attachments ?? []).map((attachment) => ({
+        attachmentKey: `${itemId}::${attachment.id}::${attachment.name}`,
+        attachmentId: attachment.id,
+        fileName: attachment.name,
+        sourceUrl: attachment.url,
+        localPath: "",
+        downloadUrl: attachment.url,
+        mimeType: "application/pdf",
+        sizeBytes: 0,
+        downloadedAt: new Date().toISOString(),
+        extractedText: "",
+      })),
+    });
+    flattenSupplementalAgenda(meeting, node.children ?? [], itemId, currentPath, output);
+  }
+}
+
+function supplementalMeetingDetail(meeting: SupplementalMeeting): ImportedMeetingDetail {
+  const items: ImportedAgendaItem[] = [];
+  flattenSupplementalAgenda(meeting, meeting.agenda ?? [], null, [], items);
+  return {
+    meetingId: meeting.id,
+    districtId: null,
+    sourceUrl: meeting.detailURL,
+    meetingTitle: `${meeting.title} | ${supplementalDateLabel(meeting) ?? ""}`.trim(),
+    meetingDateLabel: supplementalDateLabel(meeting),
+    agendaTabLabel: "Agenda",
+    lastImportedAt: new Date().toISOString(),
+    itemCount: items.length,
+    attachmentCount: items.reduce((count, item) => count + item.attachments.length, 0),
+    items,
+  };
+}
 
 function parseMeetingDateLabel(value: string | null) {
   if (!value) {
@@ -145,7 +239,7 @@ export function getImportedMeetings(): ImportedMeeting[] {
     .all() as Array<MeetingRow & { item_count: number; attachment_count: number }>;
   db.close();
 
-  return rows
+  const importedMeetings = rows
     .map((row) => ({
       meetingId: row.meeting_id,
       districtId: row.district_id,
@@ -157,6 +251,27 @@ export function getImportedMeetings(): ImportedMeeting[] {
       itemCount: row.item_count,
       attachmentCount: row.attachment_count,
     }))
+    .sort((left, right) => parseMeetingDateLabel(right.meetingDateLabel) - parseMeetingDateLabel(left.meetingDateLabel));
+
+  const byId = new Map(importedMeetings.map((meeting) => [meeting.meetingId, meeting]));
+  for (const supplemental of readSupplementalMeetings()) {
+    if (!byId.has(supplemental.id)) {
+      const detail = supplementalMeetingDetail(supplemental);
+      byId.set(supplemental.id, {
+        meetingId: detail.meetingId,
+        districtId: detail.districtId,
+        sourceUrl: detail.sourceUrl,
+        meetingTitle: detail.meetingTitle,
+        meetingDateLabel: detail.meetingDateLabel,
+        agendaTabLabel: detail.agendaTabLabel,
+        lastImportedAt: detail.lastImportedAt,
+        itemCount: detail.itemCount,
+        attachmentCount: detail.attachmentCount,
+      });
+    }
+  }
+
+  return Array.from(byId.values())
     .sort((left, right) => parseMeetingDateLabel(right.meetingDateLabel) - parseMeetingDateLabel(left.meetingDateLabel))
     .slice(0, 52);
 }
@@ -187,7 +302,8 @@ export function getImportedMeetingDetail(meetingId: string): ImportedMeetingDeta
 
   if (!meetingRow) {
     db.close();
-    return null;
+    const supplemental = readSupplementalMeetings().find((meeting) => meeting.id === meetingId);
+    return supplemental ? supplementalMeetingDetail(supplemental) : null;
   }
 
   const itemRows = db
